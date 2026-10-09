@@ -1,6 +1,6 @@
 {
   "name": "react-native-all-video-player",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "One video player for React Native: pass any URL — YouTube links, mp4/mov/webm files, HLS (m3u8) and DASH (mpd) streams — and get the same custom controls and built-in landscape fullscreen. Native playback (ExoPlayer / AVPlayer), nothing else to install (New Architecture).",
   "type": "module",
   "main": "lib/index.js",
@@ -44,11 +44,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/dharmveerofficial/react-native-youtube-custom-player.git"
+    "url": "git+https://github.com/dharmveerofficial/react-native-all-video-player.git"
   },
-  "homepage": "https://github.com/dharmveerofficial/react-native-youtube-custom-player#readme",
+  "homepage": "https://github.com/dharmveerofficial/react-native-all-video-player#readme",
   "bugs": {
-    "url": "https://github.com/dharmveerofficial/react-native-youtube-custom-player/issues"
+    "url": "https://github.com/dharmveerofficial/react-native-all-video-player/issues"
   },
   "peerDependencies": {
     "react": ">=18",
