@@ -63,3 +63,20 @@ test('start time is clamped to whole non-negative seconds', () => {
   assert.match(youtubeHtml({ ...base, startSeconds: 12.7 }), /start: 12,/);
   assert.match(youtubeHtml({ ...base, startSeconds: -3 }), /start: 0,/);
 });
+
+test('thumbnail cover shows whenever the video is not playing, and holds through buffering', () => {
+  const updateCover = (hideBranding: boolean) => {
+    const cover = { className: '' };
+    const src = youtubeHtml({ ...base, hideBranding }).match(/function updateCover[\s\S]*?\n}/)![0];
+    const fn = new Function('cover', `${src}; return updateCover;`)(cover) as (state: number) => void;
+    return (state: number) => (fn(state), cover.className);
+  };
+  const step = updateCover(true);
+  assert.equal(step(3), '');
+  assert.equal(step(1), 'hidden');
+  assert.equal(step(3), 'hidden');
+  assert.equal(step(2), '');
+  assert.equal(step(1), 'hidden');
+  assert.equal(step(0), '');
+  assert.equal(updateCover(false)(2), 'hidden');
+});

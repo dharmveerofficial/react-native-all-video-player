@@ -50,7 +50,7 @@ export function youtubeHtml(options: YouTubeHtmlOptions): string {
 #shield{position:absolute;top:0;left:0;width:100%;height:100%;z-index:2}</style><style id="frame"></style>
 </head><body><div id="player"></div><div id="cover"${hideBranding ? '' : ' class="hidden"'}></div><div id="shield"></div>
 <script>
-var player, ready = false, hasPlayed = false;
+var player, ready = false;
 var cover = document.getElementById('cover');
 ${PLAYER_FRAME_JS}
 function layout() {
@@ -61,10 +61,11 @@ function layout() {
 layout();
 window.addEventListener('resize', layout);
 function send(m) { window.AVPBridge.postMessage(JSON.stringify(m)); }
+// Thumbnail over everything but playback: hides YouTube's start, pause and end
+// screens. Buffering keeps the current look so playback stalls don't flash it.
 function updateCover(state) {
-  if (state === 1) hasPlayed = true;
-  var show = ${flag} && (state === 0 || (!hasPlayed && state !== 1));
-  cover.className = show ? '' : 'hidden';
+  if (state === 3) return;
+  cover.className = ${flag} && state !== 1 ? '' : 'hidden';
 }
 function onYouTubeIframeAPIReady() {
   player = new YT.Player('player', {

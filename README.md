@@ -8,7 +8,7 @@ One video player for React Native. Pass **any video URL**: YouTube links, mp4/mo
 - **Built-in fullscreen:** rotates to landscape, hides the status bar, handles Android's back button, and restores everything on exit.
 - **One install:** nothing else to add, no AppDelegate/MainActivity changes.
 
-> **Before you ship:** YouTube's [API Terms](https://developers.google.com/youtube/terms/developer-policies) don't allow obscuring YouTube branding in embedded players. Hiding it (`hideYouTubeBranding`, on by default) is your call. Set it to `false` to show YouTube's overlays normally.
+> **Before you ship:** YouTube's [API Terms](https://developers.google.com/youtube/terms/developer-policies) don't allow obscuring YouTube branding in embedded players. Hiding it is off by default, so YouTube's overlays show normally. Turning on `hideYouTubeBranding` is your call.
 
 ## Installation
 
@@ -83,7 +83,7 @@ Props marked <sup>*</sup> are required.
 | `url` <sup>*</sup> | `string` | — | Any video URL, or a YouTube id/link. |
 | `autoPlay` | `boolean` | `false` | Play as soon as the player is ready. |
 | `startSeconds` | `number` | `0` | Start position. |
-| `hideYouTubeBranding` | `boolean` | `true` | YouTube only: clip YouTube's overlays and cover its start/end screens with the thumbnail. |
+| `hideYouTubeBranding` | `boolean` | `false` | YouTube only: clip YouTube's overlays and cover its start, pause and end screens with the thumbnail. |
 | `showControls` | `boolean` | `true` | `false` gives a bare player you drive through the ref. |
 | `playbackRates` | `number[]` | `[1, 1.25, 1.5, 2]` | Speeds the speed button cycles through; `[]` hides it. |
 | `seekStepSeconds` | `number` | `10` | Skip buttons' step; `0` hides them. |

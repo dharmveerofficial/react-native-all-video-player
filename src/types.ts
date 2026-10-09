@@ -29,8 +29,8 @@ export interface VideoPlayerProps {
   autoPlay?: boolean;
   startSeconds?: number;
   /**
-   * YouTube only: clip YouTube's overlays and cover its start/end screens.
-   * Default true. YouTube's API terms don't allow obscuring its branding.
+   * YouTube only: clip YouTube's overlays and cover its start, pause and end screens with the thumbnail.
+   * Default false. YouTube's API terms don't allow obscuring its branding.
    */
   hideYouTubeBranding?: boolean;
   /** Default true; false gives a bare player driven via the ref. */

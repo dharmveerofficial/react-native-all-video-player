@@ -33,7 +33,7 @@ const PlayerSurface = forwardRef<VideoPlayerRef, SurfaceProps>(function PlayerSu
     url,
     autoPlay = false,
     startSeconds = 0,
-    hideYouTubeBranding = true,
+    hideYouTubeBranding = false,
     showControls = true,
     playbackRates = DEFAULT_RATES,
     seekStepSeconds = 10,
