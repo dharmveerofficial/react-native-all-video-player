@@ -20,6 +20,8 @@ class AVPVideoViewManager : SimpleViewManager<AVPVideoView>(), AVPVideoViewManag
 
   override fun setSource(view: AVPVideoView, value: String?) = view.setSource(value)
 
+  override fun setGrabPoster(view: AVPVideoView, value: Boolean) = view.setGrabPoster(value)
+
   override fun play(view: AVPVideoView) = view.play()
 
   override fun pause(view: AVPVideoView) = view.pause()
@@ -40,6 +42,7 @@ class AVPVideoViewManager : SimpleViewManager<AVPVideoView>(), AVPVideoViewManag
     AVPVideoView.EVENT_STATE to mapOf("registrationName" to "onVideoState"),
     AVPVideoView.EVENT_PROGRESS to mapOf("registrationName" to "onVideoProgress"),
     AVPVideoView.EVENT_ERROR to mapOf("registrationName" to "onVideoError"),
+    AVPVideoView.EVENT_POSTER to mapOf("registrationName" to "onVideoPoster"),
   )
 
   companion object {

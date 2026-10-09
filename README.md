@@ -4,7 +4,7 @@ One video player for React Native. Pass **any video URL**: YouTube links, mp4/mo
 
 - **Native playback** for video files and streams: ExoPlayer (Media3) on Android, AVPlayer on iOS.
 - **YouTube** plays through the official [IFrame Player API](https://developers.google.com/youtube/iframe_api_reference). YouTube has no native player you can embed. Its controls, title bar, logo and "More videos" strip are hidden, and taps never reach YouTube's UI.
-- **Custom controls:** play/pause, ±10 s skip, draggable seek bar, time, speed and fullscreen.
+- **Custom controls:** play/pause, ±10 s skip, draggable seek bar, time, a speed menu and fullscreen.
 - **Built-in fullscreen:** rotates to landscape, hides the status bar, handles Android's back button, and restores everything on exit.
 - **One install:** nothing else to add, no AppDelegate/MainActivity changes.
 
@@ -83,15 +83,19 @@ Props marked <sup>*</sup> are required.
 | `url` <sup>*</sup> | `string` | — | Any video URL, or a YouTube id/link. |
 | `autoPlay` | `boolean` | `false` | Play as soon as the player is ready. |
 | `startSeconds` | `number` | `0` | Start position. |
-| `hideYouTubeBranding` | `boolean` | `false` | YouTube only: clip YouTube's overlays and cover its start, pause and end screens with the thumbnail. |
+| `hideYouTubeBranding` | `boolean` | `false` | YouTube only: clip YouTube's overlays and cover its start and end screens with the thumbnail. |
+| `thumbnail` | `string` | — | Image URL shown over the video before the first play and after the end, for any source. For YouTube it replaces the video's own thumbnail and turns the cover on even without `hideYouTubeBranding`. Without one, video files (mp4, mov, webm, …) use a frame grabbed from the video (10%, 25% or 50% in, skipping blank frames); HLS/DASH streams get none. |
+| `thumbnailOnPause` | `boolean` | `false` | Also show the thumbnail while paused mid-video (YouTube needs `hideYouTubeBranding` or `thumbnail`). |
 | `showControls` | `boolean` | `true` | `false` gives a bare player you drive through the ref. |
-| `playbackRates` | `number[]` | `[1, 1.25, 1.5, 2]` | Speeds the speed button cycles through; `[]` hides it. |
-| `seekStepSeconds` | `number` | `10` | Skip buttons' step; `0` hides them. |
+| `playbackRates` | `number[]` | `[0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2]` | Speeds listed in the speed menu; `[]` hides the speed button. |
+| `seekStepSeconds` | `number` | `10` | Step for the skip buttons and double-tap seeking; `0` turns both off. |
+| `doubleTapToSeek` | `boolean` | `true` | Double-tap left or right of the center controls to seek back / forward. |
 | `accentColor` | `string` | `#7C3AED` | Seek bar color. |
 | `allowFullscreen` | `boolean` | `true` | Show the fullscreen button. |
 | `onFullscreenChange` | `(fullscreen: boolean) => void` | — | |
 | `style` | `ViewStyle` | — | Size and position. |
 | `renderLoading` | `() => ReactNode` | spinner | Shown while loading/buffering. |
+| `renderBackButton` | `({ exitFullscreen }) => ReactNode` | arrow in a circle | Replaces the fullscreen back button (shown with the controls). Position it yourself; return `null` to hide it. |
 | `onReady` | `({ duration }) => void` | — | `duration` is `0` for live streams. |
 | `onStateChange` | `(state: PlayerState) => void` | — | `Unstarted / Ended / Playing / Paused / Buffering / Cued`. |
 | `onProgress` | `({ currentTime, duration }) => void` | — | About twice a second. |

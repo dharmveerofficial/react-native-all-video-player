@@ -29,16 +29,26 @@ export interface VideoPlayerProps {
   autoPlay?: boolean;
   startSeconds?: number;
   /**
-   * YouTube only: clip YouTube's overlays and cover its start, pause and end screens with the thumbnail.
+   * YouTube only: clip YouTube's overlays and cover its start and end screens with the thumbnail.
    * Default false. YouTube's API terms don't allow obscuring its branding.
    */
   hideYouTubeBranding?: boolean;
+  /**
+   * Image URL shown over the video before the first play and after the end, for any
+   * source. Without one, YouTube uses the video's own thumbnail (when hideYouTubeBranding
+   * is on) and video files use a frame grabbed from the video, skipping blank ones (not for HLS/DASH streams).
+   */
+  thumbnail?: string;
+  /** Also show the thumbnail while paused mid-video. Default false. */
+  thumbnailOnPause?: boolean;
   /** Default true; false gives a bare player driven via the ref. */
   showControls?: boolean;
-  /** Default [1, 1.25, 1.5, 2]; empty hides the speed button. */
+  /** Speeds listed in the speed menu. Default [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2]; empty hides the speed button. */
   playbackRates?: number[];
-  /** Default 10; 0 hides the skip buttons. */
+  /** Default 10. Step for the skip buttons and left/right double-tap; 0 turns both off. */
   seekStepSeconds?: number;
+  /** Double-tap left or right of the center controls to seek by seekStepSeconds. Default true. */
+  doubleTapToSeek?: boolean;
   /** Seek bar color. Default '#7C3AED'. */
   accentColor?: string;
   /** Default true. */
@@ -46,6 +56,11 @@ export interface VideoPlayerProps {
   onFullscreenChange?: (fullscreen: boolean) => void;
   style?: StyleProp<ViewStyle>;
   renderLoading?: () => ReactNode;
+  /**
+   * Replaces the fullscreen back button. Rendered over the player while the controls show;
+   * position it yourself (e.g. absolute, top-left). Return null to hide the button.
+   */
+  renderBackButton?: (props: { exitFullscreen: () => void }) => ReactNode;
   onReady?: (info: { duration: number }) => void;
   onStateChange?: (state: PlayerState) => void;
   /** About twice a second. */

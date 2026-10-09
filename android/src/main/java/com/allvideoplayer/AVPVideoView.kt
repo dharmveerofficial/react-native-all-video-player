@@ -1,7 +1,10 @@
 package com.allvideoplayer
 
 import android.annotation.SuppressLint
+import android.graphics.Bitmap
 import android.graphics.Color
+import android.media.MediaMetadataRetriever
+import android.net.Uri
 import android.widget.FrameLayout
 import androidx.annotation.OptIn
 import androidx.media3.common.C
@@ -15,6 +18,9 @@ import androidx.media3.ui.PlayerView
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.LifecycleEventListener
 import com.facebook.react.uimanager.ThemedReactContext
+import java.io.File
+import java.security.MessageDigest
+import java.util.concurrent.Executors
 
 @OptIn(UnstableApi::class)
 @SuppressLint("ViewConstructor")
@@ -30,6 +36,8 @@ class AVPVideoView(private val reactContext: ThemedReactContext) :
   }
   private var player: ExoPlayer? = null
   private var source: String? = null
+  private var grabPoster = false
+  private var posterFor: String? = null
   private var ready = false
   private var hasPlayed = false
   private var lastState = STATE_UNSTARTED
@@ -92,6 +100,28 @@ class AVPVideoView(private val reactContext: ThemedReactContext) :
       it.prepare()
       playerView.player = it
     }
+    maybeGrabPoster()
+  }
+
+  fun setGrabPoster(value: Boolean) {
+    grabPoster = value
+    maybeGrabPoster()
+  }
+
+  /** Once per source, off the main thread; streams (HLS/DASH) just don't get one. */
+  private fun maybeGrabPoster() {
+    val url = source
+    if (!grabPoster || url.isNullOrEmpty() || url == posterFor) return
+    posterFor = url
+    val context = reactContext.applicationContext
+    posterExecutor.execute {
+      val file = grabFrame(context, url) ?: return@execute
+      post {
+        if (url == source) {
+          emit(reactContext, EVENT_POSTER, Arguments.createMap().apply { putString("uri", Uri.fromFile(file).toString()) })
+        }
+      }
+    }
   }
 
   fun play() {
@@ -136,6 +166,7 @@ class AVPVideoView(private val reactContext: ThemedReactContext) :
     ready = false
     hasPlayed = false
     lastState = STATE_UNSTARTED
+    posterFor = null
   }
 
   private fun updateState() {
@@ -183,6 +214,66 @@ class AVPVideoView(private val reactContext: ThemedReactContext) :
     const val EVENT_STATE = "topVideoState"
     const val EVENT_PROGRESS = "topVideoProgress"
     const val EVENT_ERROR = "topVideoError"
+    const val EVENT_POSTER = "topVideoPoster"
+
+    private const val POSTER_MAX_WIDTH = 1280
+    // Tried in order; intros are often a blank slide or a fade from black.
+    private val POSTER_AT = doubleArrayOf(0.1, 0.25, 0.5)
+    private const val FLAT_VARIANCE = 40.0
+    private val posterExecutor = Executors.newSingleThreadExecutor()
+
+    /** A JPEG of the first non-blank frame of POSTER_AT, cached per URL; null when the source can't be read. */
+    private fun grabFrame(context: android.content.Context, url: String): File? {
+      val dir = File(context.cacheDir, "avp-posters").apply { mkdirs() }
+      val digest = MessageDigest.getInstance("SHA-1").digest("v2:$url".toByteArray())
+      val file = File(dir, digest.joinToString("") { "%02x".format(it) } + ".jpg")
+      if (file.length() > 0) return file
+      val retriever = MediaMetadataRetriever()
+      return try {
+        val uri = Uri.parse(url)
+        if (uri.scheme == "http" || uri.scheme == "https") retriever.setDataSource(url, emptyMap())
+        else retriever.setDataSource(context, uri)
+        val durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0
+        var fallback: Bitmap? = null
+        var picked: Bitmap? = null
+        for (fraction in POSTER_AT) {
+          val atUs = (durationMs * 1000 * fraction).toLong()
+          val candidate = retriever.getFrameAtTime(atUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC) ?: continue
+          if (!isFlat(candidate)) {
+            picked = candidate
+            break
+          }
+          if (fallback == null) fallback = candidate
+        }
+        var frame = picked ?: fallback ?: retriever.getFrameAtTime() ?: return null
+        if (frame.width > POSTER_MAX_WIDTH) {
+          frame = Bitmap.createScaledBitmap(frame, POSTER_MAX_WIDTH, frame.height * POSTER_MAX_WIDTH / frame.width, true)
+        }
+        val tmp = File(dir, file.name + ".tmp")
+        tmp.outputStream().use { frame.compress(Bitmap.CompressFormat.JPEG, 85, it) }
+        if (tmp.renameTo(file)) file else null
+      } catch (e: Exception) {
+        null
+      } finally {
+        try { retriever.release() } catch (_: Exception) {}
+      }
+    }
+
+    /** True for a near-uniform frame (black, or one flat colour). */
+    private fun isFlat(frame: Bitmap): Boolean {
+      val small = Bitmap.createScaledBitmap(frame, 32, 18, true)
+      var sum = 0.0
+      var sumSq = 0.0
+      val n = small.width * small.height
+      for (y in 0 until small.height) for (x in 0 until small.width) {
+        val c = small.getPixel(x, y)
+        val luma = 0.299 * Color.red(c) + 0.587 * Color.green(c) + 0.114 * Color.blue(c)
+        sum += luma
+        sumSq += luma * luma
+      }
+      val mean = sum / n
+      return sumSq / n - mean * mean < FLAT_VARIANCE
+    }
 
     // Same codes as YouTube's player states, which the JS side uses for both engines.
     private const val STATE_UNSTARTED = -1

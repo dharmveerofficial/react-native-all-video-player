@@ -4,6 +4,10 @@ export interface YouTubeHtmlOptions {
   origin: string;
   startSeconds: number;
   hideBranding: boolean;
+  /** Also cover pauses mid-video, not just the start and end. */
+  thumbnailOnPause: boolean;
+  /** Cover image in place of YouTube's; passing one turns the cover on. */
+  thumbnail?: string;
 }
 
 export const YOUTUBE_ERROR_MESSAGES: Record<number, string> = {
@@ -36,36 +40,51 @@ export const PLAYER_FRAME_JS = `function playerFrame(boxWidth, boxHeight, cropEd
   };
 }`;
 
+/** Percent-encodes what could break out of a CSS url("...") inside a <style>. */
+export function cssUrl(url: string): string {
+  return url.replace(/["'()\\<>\s]/g, c => '%' + c.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0'));
+}
+
 export function youtubeHtml(options: YouTubeHtmlOptions): string {
-  const { videoId, origin, startSeconds, hideBranding } = options;
+  const { videoId, origin, startSeconds, hideBranding, thumbnailOnPause, thumbnail } = options;
   const start = Math.max(0, Math.floor(startSeconds));
   const flag = hideBranding ? 'true' : 'false';
+  const onPause = thumbnailOnPause ? 'true' : 'false';
+  const coverOn = hideBranding || !!thumbnail;
+  const image = thumbnail ? cssUrl(thumbnail) : `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
 
   return `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
 <style>html,body{margin:0;height:100%;background:#000;overflow:hidden}
 #player{position:absolute;left:0;top:0;width:100%;height:100%;border:0}
 #cover{position:absolute;top:0;left:0;width:100%;height:100%;z-index:1;background:#000
-  url('https://i.ytimg.com/vi/${videoId}/hqdefault.jpg') center/cover no-repeat}
+  url("${image}") center/cover no-repeat}
 #cover.hidden{display:none}
 #shield{position:absolute;top:0;left:0;width:100%;height:100%;z-index:2}</style><style id="frame"></style>
-</head><body><div id="player"></div><div id="cover"${hideBranding ? '' : ' class="hidden"'}></div><div id="shield"></div>
+</head><body><div id="player"></div><div id="cover"${coverOn ? '' : ' class="hidden"'}></div><div id="shield"></div>
 <script>
-var player, ready = false;
+var player, ready = false, hasPlayed = false;
 var cover = document.getElementById('cover');
 ${PLAYER_FRAME_JS}
+// Sizes in px from the window: Android WebView can keep html/body at 0px tall
+// when the page loads before the view is laid out, collapsing 100% heights.
 function layout() {
-  var f = playerFrame(window.innerWidth, window.innerHeight, ${flag});
+  var w = window.innerWidth, h = window.innerHeight;
+  var f = playerFrame(w, h, ${flag});
   document.getElementById('frame').textContent = '#player{left:' + f.left + 'px;top:' + f.top +
-    'px;width:' + f.width + 'px;height:' + f.height + 'px}';
+    'px;width:' + f.width + 'px;height:' + f.height + 'px}' +
+    '#cover,#shield{width:' + w + 'px;height:' + h + 'px}';
 }
 layout();
 window.addEventListener('resize', layout);
 function send(m) { window.AVPBridge.postMessage(JSON.stringify(m)); }
-// Thumbnail over everything but playback: hides YouTube's start, pause and end
-// screens. Buffering keeps the current look so playback stalls don't flash it.
+// Thumbnail over YouTube's start and end screens, and over pauses when onPause.
+// With onPause, buffering keeps the current look so seeking while paused
+// doesn't flash the video.
 function updateCover(state) {
-  if (state === 3) return;
-  cover.className = ${flag} && state !== 1 ? '' : 'hidden';
+  if (state === 1) hasPlayed = true;
+  if (state === 3 && ${onPause}) return;
+  var show = ${coverOn} && (state === 0 || (state === 2 && ${onPause}) || (!hasPlayed && state !== 1));
+  cover.className = show ? '' : 'hidden';
 }
 function onYouTubeIframeAPIReady() {
   player = new YT.Player('player', {

@@ -90,6 +90,38 @@ export function FullscreenIcon({ size, color, exit }: IconProps & { exit: boolea
   );
 }
 
+// Left arrow: a shaft plus a chevron (a square showing two borders, turned 45°).
+export function BackIcon({ size, color }: IconProps) {
+  const thickness = Math.max(2, size * 0.11);
+  const head = size * 0.5;
+  return (
+    <View style={{ width: size, height: size, justifyContent: 'center' }}>
+      <View
+        style={{
+          position: 'absolute',
+          left: size * 0.12,
+          right: size * 0.08,
+          height: thickness,
+          borderRadius: thickness / 2,
+          backgroundColor: color,
+        }}
+      />
+      <View
+        style={{
+          position: 'absolute',
+          left: size * 0.14,
+          width: head,
+          height: head,
+          borderLeftWidth: thickness,
+          borderBottomWidth: thickness,
+          borderColor: color,
+          transform: [{ rotate: '45deg' }],
+        }}
+      />
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center' },
   skipNumber: { position: 'absolute', left: 0, right: 0, textAlign: 'center', fontWeight: '700' },

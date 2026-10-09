@@ -2,7 +2,14 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { PLAYER_FRAME_JS, youtubeHtml } from '../src/youtubeHtml.ts';
 
-const base = { videoId: 'dQw4w9WgXcQ', origin: 'https://localhost', startSeconds: 0, hideBranding: true };
+const base = {
+  videoId: 'dQw4w9WgXcQ',
+  origin: 'https://localhost',
+  startSeconds: 0,
+  hideBranding: true,
+  thumbnailOnPause: false,
+  thumbnail: undefined as string | undefined,
+};
 
 type Frame = { left: number; top: number; width: number; height: number };
 const playerFrame = new Function(`${PLAYER_FRAME_JS}; return playerFrame;`)() as (
@@ -21,9 +28,14 @@ test('turns off YouTube controls and keeps the player inline', () => {
 
 test('lays the player out from the box size and on resize', () => {
   const html = youtubeHtml(base);
-  assert.match(html, /playerFrame\(window.innerWidth, window.innerHeight, true\)/);
+  assert.match(html, /var w = window.innerWidth, h = window.innerHeight;/);
+  assert.match(html, /playerFrame\(w, h, true\)/);
   assert.match(html, /addEventListener\('resize', layout\)/);
-  assert.match(youtubeHtml({ ...base, hideBranding: false }), /window.innerHeight, false\)/);
+  assert.match(youtubeHtml({ ...base, hideBranding: false }), /playerFrame\(w, h, false\)/);
+});
+
+test('sizes the cover and shield in px, not % of a possibly 0px-tall body', () => {
+  assert.match(youtubeHtml(base), /'#cover,#shield\{width:' \+ w \+ 'px;height:' \+ h \+ 'px\}'/);
 });
 
 test('does not report unrelated page script errors', () => {
@@ -64,19 +76,51 @@ test('start time is clamped to whole non-negative seconds', () => {
   assert.match(youtubeHtml({ ...base, startSeconds: -3 }), /start: 0,/);
 });
 
-test('thumbnail cover shows whenever the video is not playing, and holds through buffering', () => {
-  const updateCover = (hideBranding: boolean) => {
-    const cover = { className: '' };
-    const src = youtubeHtml({ ...base, hideBranding }).match(/function updateCover[\s\S]*?\n}/)![0];
-    const fn = new Function('cover', `${src}; return updateCover;`)(cover) as (state: number) => void;
-    return (state: number) => (fn(state), cover.className);
-  };
-  const step = updateCover(true);
+const coverSteps = (options: Partial<typeof base>) => {
+  const cover = { className: '' };
+  const src = youtubeHtml({ ...base, ...options }).match(/function updateCover[\s\S]*?\n}/)![0];
+  const fn = new Function('cover', `var hasPlayed = false; ${src}; return updateCover;`)(cover) as (
+    state: number,
+  ) => void;
+  return (state: number) => (fn(state), cover.className);
+};
+
+test('thumbnail cover shows before the first play and at the end, not on pause', () => {
+  const step = coverSteps({});
+  assert.equal(step(5), '');
+  assert.equal(step(3), '');
+  assert.equal(step(1), 'hidden');
+  assert.equal(step(3), 'hidden');
+  assert.equal(step(2), 'hidden');
+  assert.equal(step(1), 'hidden');
+  assert.equal(step(0), '');
+  assert.equal(step(3), 'hidden');
+  assert.equal(coverSteps({ hideBranding: false })(0), 'hidden');
+});
+
+test('thumbnailOnPause also covers pauses, and holds through buffering', () => {
+  const step = coverSteps({ thumbnailOnPause: true });
+  assert.equal(step(5), '');
   assert.equal(step(3), '');
   assert.equal(step(1), 'hidden');
   assert.equal(step(3), 'hidden');
   assert.equal(step(2), '');
+  assert.equal(step(3), '');
   assert.equal(step(1), 'hidden');
   assert.equal(step(0), '');
-  assert.equal(updateCover(false)(2), 'hidden');
+  assert.equal(coverSteps({ hideBranding: false, thumbnailOnPause: true })(2), 'hidden');
+});
+
+test('a custom thumbnail replaces YouTube\'s and turns the cover on', () => {
+  const html = youtubeHtml({ ...base, hideBranding: false, thumbnail: 'https://cdn.example.com/poster.jpg' });
+  assert.match(html, /url\("https:\/\/cdn\.example\.com\/poster\.jpg"\)/);
+  assert.doesNotMatch(html, /i\.ytimg\.com/);
+  assert.match(html, /<div id="cover"><\/div>/);
+  assert.equal(coverSteps({ hideBranding: false, thumbnail: 'https://x/y.jpg' })(0), '');
+});
+
+test('thumbnail URL cannot break out of the CSS url()', () => {
+  const html = youtubeHtml({ ...base, thumbnail: 'https://x/a".jpg)</style><script>alert(1)</script>' });
+  assert.doesNotMatch(html, /<\/style><script>alert/);
+  assert.match(html, /a%22\.jpg%29%3C\/style%3E%3Cscript%3Ealert%281%29%3C\/script%3E/);
 });

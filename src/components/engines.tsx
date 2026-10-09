@@ -35,12 +35,22 @@ interface PageMessage {
   message?: string;
 }
 
-export const YouTubeEngine = forwardRef<EngineHandle, EngineProps & { videoId: string; hideBranding: boolean }>(
-  function YouTubeEngine({ videoId, hideBranding, startSeconds, style, onReady, onState, onTime, onError }, ref) {
+type YouTubeEngineProps = EngineProps & {
+  videoId: string;
+  hideBranding: boolean;
+  thumbnailOnPause: boolean;
+  thumbnail?: string;
+};
+
+export const YouTubeEngine = forwardRef<EngineHandle, YouTubeEngineProps>(
+  function YouTubeEngine(
+    { videoId, hideBranding, thumbnailOnPause, thumbnail, startSeconds, style, onReady, onState, onTime, onError },
+    ref,
+  ) {
     const viewRef = useRef<React.ElementRef<typeof AVPWebView>>(null);
     const html = useMemo(
-      () => youtubeHtml({ videoId, origin: EMBED_ORIGIN, startSeconds, hideBranding }),
-      [videoId, startSeconds, hideBranding],
+      () => youtubeHtml({ videoId, origin: EMBED_ORIGIN, startSeconds, hideBranding, thumbnailOnPause, thumbnail }),
+      [videoId, startSeconds, hideBranding, thumbnailOnPause, thumbnail],
     );
 
     const run = useCallback((script: string) => {
@@ -101,8 +111,15 @@ export const YouTubeEngine = forwardRef<EngineHandle, EngineProps & { videoId: s
   },
 );
 
-export const NativeVideoEngine = forwardRef<EngineHandle, EngineProps & { url: string }>(function NativeVideoEngine(
-  { url, startSeconds, style, onReady, onState, onTime, onError },
+type NativeVideoEngineProps = EngineProps & {
+  url: string;
+  /** Grab a frame from the video to use as its thumbnail. */
+  grabPoster: boolean;
+  onPoster(uri: string): void;
+};
+
+export const NativeVideoEngine = forwardRef<EngineHandle, NativeVideoEngineProps>(function NativeVideoEngine(
+  { url, grabPoster, startSeconds, style, onReady, onState, onTime, onError, onPoster },
   ref,
 ) {
   const viewRef = useRef<React.ElementRef<typeof AVPVideoView>>(null);
@@ -127,6 +144,7 @@ export const NativeVideoEngine = forwardRef<EngineHandle, EngineProps & { url: s
       ref={viewRef}
       style={style}
       source={url}
+      grabPoster={grabPoster}
       onVideoReady={e => {
         if (startSeconds > 0) call(view => VideoCommands.seekTo(view, startSeconds));
         onReady(e.nativeEvent.duration);
@@ -134,6 +152,7 @@ export const NativeVideoEngine = forwardRef<EngineHandle, EngineProps & { url: s
       onVideoState={e => onState(e.nativeEvent.state as PlayerState)}
       onVideoProgress={e => onTime(e.nativeEvent.currentTime, e.nativeEvent.duration)}
       onVideoError={e => onError({ message: e.nativeEvent.message || 'The video could not be played' })}
+      onVideoPoster={e => onPoster(e.nativeEvent.uri)}
     />
   );
 });

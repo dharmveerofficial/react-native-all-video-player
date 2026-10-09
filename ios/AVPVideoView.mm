@@ -1,6 +1,7 @@
 #import "AVPVideoView.h"
 
 #import <AVFoundation/AVFoundation.h>
+#import <CommonCrypto/CommonDigest.h>
 
 #import <react/renderer/components/RNAllVideoPlayerSpec/ComponentDescriptors.h>
 #import <react/renderer/components/RNAllVideoPlayerSpec/EventEmitters.h>
@@ -20,6 +21,28 @@ typedef NS_ENUM(NSInteger, AVPState) {
 };
 
 static void *kItemStatusContext = &kItemStatusContext;
+
+/** True for a near-uniform frame (black, or one flat colour). */
+static BOOL AVPIsFlat(CGImageRef image)
+{
+  const size_t width = 32, height = 18;
+  uint8_t pixels[width * height * 4];
+  CGColorSpaceRef space = CGColorSpaceCreateDeviceRGB();
+  CGContextRef context = CGBitmapContextCreate(pixels, width, height, 8, width * 4, space,
+                                               kCGImageAlphaNoneSkipLast | kCGBitmapByteOrder32Big);
+  CGColorSpaceRelease(space);
+  if (context == NULL) return NO;
+  CGContextDrawImage(context, CGRectMake(0, 0, width, height), image);
+  CGContextRelease(context);
+  double sum = 0, sumSq = 0;
+  for (size_t i = 0; i < width * height; i++) {
+    double luma = 0.299 * pixels[i * 4] + 0.587 * pixels[i * 4 + 1] + 0.114 * pixels[i * 4 + 2];
+    sum += luma;
+    sumSq += luma * luma;
+  }
+  double mean = sum / (width * height);
+  return sumSq / (width * height) - mean * mean < 40;
+}
 static void *kTimeControlContext = &kTimeControlContext;
 
 @interface AVPPlayerLayerView : UIView
@@ -39,6 +62,8 @@ static void *kTimeControlContext = &kTimeControlContext;
   AVPPlayerLayerView *_layerView;
   AVPlayer *_player;
   NSString *_source;
+  BOOL _grabPoster;
+  NSString *_posterFor;
   id _timeObserver;
   BOOL _ready;
   BOOL _ended;
@@ -76,7 +101,99 @@ static void *kTimeControlContext = &kTimeControlContext;
     _source = source;
     [self loadSource:source];
   }
+  _grabPoster = newProps.grabPoster;
+  [self maybeGrabPoster];
   [super updateProps:props oldProps:oldProps];
+}
+
+// Once per source, off the main thread; streams (HLS/DASH) just don't get one.
+- (void)maybeGrabPoster
+{
+  NSString *source = _source;
+  if (!_grabPoster || source.length == 0 || [source isEqualToString:_posterFor]) return;
+  NSURL *url = [NSURL URLWithString:source];
+  if (url == nil) return;
+  _posterFor = source;
+
+  NSURL *file = [AVPVideoView posterFileForSource:source];
+  __weak AVPVideoView *weakSelf = self;
+  void (^deliver)(void) = ^{
+    dispatch_async(dispatch_get_main_queue(), ^{
+      [weakSelf emitPoster:file forSource:source];
+    });
+  };
+  if ([NSFileManager.defaultManager fileExistsAtPath:file.path]) {
+    deliver();
+    return;
+  }
+
+  AVURLAsset *asset = [AVURLAsset URLAssetWithURL:url options:nil];
+  [asset loadValuesAsynchronouslyForKeys:@[ @"duration" ]
+                       completionHandler:^{
+                         double seconds = CMTimeGetSeconds(asset.duration);
+                         if (!isfinite(seconds) || seconds <= 0) return;
+                         [AVPVideoView grabFrameFromAsset:asset seconds:seconds toFile:file then:deliver];
+                       }];
+}
+
+// Intros are often a blank slide or a fade from black: takes the first of these
+// frames that isn't flat, else the first one that loaded.
++ (void)grabFrameFromAsset:(AVAsset *)asset seconds:(double)seconds toFile:(NSURL *)file then:(void (^)(void))deliver
+{
+  AVAssetImageGenerator *generator = [AVAssetImageGenerator assetImageGeneratorWithAsset:asset];
+  generator.appliesPreferredTrackTransform = YES;
+  generator.maximumSize = CGSizeMake(1280, 1280);
+  generator.requestedTimeToleranceBefore = kCMTimePositiveInfinity;
+  generator.requestedTimeToleranceAfter = kCMTimePositiveInfinity;
+  NSMutableArray *times = [NSMutableArray array];
+  for (NSNumber *fraction in @[ @0.1, @0.25, @0.5 ]) {
+    [times addObject:[NSValue valueWithCMTime:CMTimeMakeWithSeconds(seconds * fraction.doubleValue, 600)]];
+  }
+  __block NSUInteger remaining = times.count;
+  __block BOOL done = NO;
+  __block UIImage *fallback = nil;
+  [generator generateCGImagesAsynchronouslyForTimes:times
+                                  completionHandler:^(CMTime requested, CGImageRef image, CMTime actual,
+                                                      AVAssetImageGeneratorResult result, NSError *error) {
+                                    (void)generator; // keep the generator alive until it finishes
+                                    remaining--;
+                                    if (done) return;
+                                    UIImage *picked = nil;
+                                    if (result == AVAssetImageGeneratorSucceeded && image != NULL) {
+                                      UIImage *frame = [UIImage imageWithCGImage:image];
+                                      if (!AVPIsFlat(image)) picked = frame;
+                                      else if (fallback == nil) fallback = frame;
+                                    }
+                                    if (picked == nil && remaining == 0) picked = fallback;
+                                    if (picked == nil) return;
+                                    done = YES;
+                                    [generator cancelAllCGImageGeneration];
+                                    NSData *jpeg = UIImageJPEGRepresentation(picked, 0.85);
+                                    if (jpeg && [jpeg writeToURL:file atomically:YES]) deliver();
+                                  }];
+}
+
+/** A cache file per source URL. */
++ (NSURL *)posterFileForSource:(NSString *)source
+{
+  NSURL *dir = [[NSFileManager.defaultManager URLsForDirectory:NSCachesDirectory inDomains:NSUserDomainMask].firstObject
+      URLByAppendingPathComponent:@"avp-posters"
+                      isDirectory:YES];
+  [NSFileManager.defaultManager createDirectoryAtURL:dir withIntermediateDirectories:YES attributes:nil error:nil];
+  NSData *bytes = [[@"v2:" stringByAppendingString:source] dataUsingEncoding:NSUTF8StringEncoding];
+  unsigned char digest[CC_SHA1_DIGEST_LENGTH];
+  CC_SHA1(bytes.bytes, (CC_LONG)bytes.length, digest);
+  NSMutableString *name = [NSMutableString stringWithCapacity:CC_SHA1_DIGEST_LENGTH * 2 + 4];
+  for (int i = 0; i < CC_SHA1_DIGEST_LENGTH; i++) [name appendFormat:@"%02x", digest[i]];
+  [name appendString:@".jpg"];
+  return [dir URLByAppendingPathComponent:name];
+}
+
+- (void)emitPoster:(NSURL *)file forSource:(NSString *)source
+{
+  if (!_eventEmitter || ![source isEqualToString:_source]) return;
+  std::static_pointer_cast<const AVPVideoViewEventEmitter>(_eventEmitter)
+      ->onVideoPoster(AVPVideoViewEventEmitter::OnVideoPoster{.uri = std::string(file.absoluteString.UTF8String ?: "")});
 }
 
 - (void)loadSource:(NSString *)source
@@ -124,6 +241,7 @@ static void *kTimeControlContext = &kTimeControlContext;
   _ended = NO;
   _hasPlayed = NO;
   _lastState = AVPStateUnstarted;
+  _posterFor = nil;
 }
 
 - (void)prepareForRecycle
@@ -131,6 +249,7 @@ static void *kTimeControlContext = &kTimeControlContext;
   [super prepareForRecycle];
   [self releasePlayer];
   _source = nil;
+  _grabPoster = NO;
   _rate = 1;
 }
 
