@@ -25,7 +25,7 @@ export interface ProgressEvent {
 
 export interface VideoPlayerProps {
   /** A YouTube link or id, or the http(s) URL of a video file or stream (mp4, m3u8, mpd, webm, mov, ...). */
-  source: string;
+  url: string;
   autoPlay?: boolean;
   startSeconds?: number;
   /**

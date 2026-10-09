@@ -30,7 +30,7 @@ type SurfaceProps = Omit<VideoPlayerProps, 'onFullscreenChange' | 'allowFullscre
 
 const PlayerSurface = forwardRef<VideoPlayerRef, SurfaceProps>(function PlayerSurface(
   {
-    source,
+    url,
     autoPlay = false,
     startSeconds = 0,
     hideYouTubeBranding = true,
@@ -50,7 +50,7 @@ const PlayerSurface = forwardRef<VideoPlayerRef, SurfaceProps>(function PlayerSu
   },
   ref,
 ) {
-  const resolved = useMemo(() => resolveSource(source ?? ''), [source]);
+  const resolved = useMemo(() => resolveSource(url ?? ''), [url]);
   const engineRef = useRef<EngineHandle>(null);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const timeRef = useRef({ current: 0, duration: 0 });
