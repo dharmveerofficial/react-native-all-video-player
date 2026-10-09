@@ -10,14 +10,14 @@ const SOURCES = {
 
 export default function App() {
   const player = useRef<VideoPlayerRef>(null);
-  const [source, setSource] = useState(SOURCES.YouTube);
+  const [url, setUrl] = useState(SOURCES.YouTube);
   const [status, setStatus] = useState('Loading…');
 
   return (
     <View style={styles.screen}>
       <VideoPlayer
         ref={player}
-        source={source}
+        url={url}
         style={styles.player}
         onReady={({ duration }) => setStatus(`Ready — ${Math.round(duration)}s`)}
         onStateChange={state => setStatus(`State ${state}`)}
@@ -27,8 +27,8 @@ export default function App() {
       <View style={styles.panel}>
         <Text style={styles.status}>{status}</Text>
         <View style={styles.row}>
-          {Object.entries(SOURCES).map(([label, url]) => (
-            <Button key={label} title={label} onPress={() => setSource(url)} />
+          {Object.entries(SOURCES).map(([label, link]) => (
+            <Button key={label} title={label} onPress={() => setUrl(link)} />
           ))}
         </View>
         <View style={styles.row}>

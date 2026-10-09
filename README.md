@@ -34,9 +34,9 @@ buildscript {
 ```tsx
 import { VideoPlayer } from 'react-native-all-video-player';
 
-<VideoPlayer source="https://youtu.be/dQw4w9WgXcQ" style={{ width: '100%', aspectRatio: 16 / 9 }} />;
-<VideoPlayer source="https://cdn.example.com/lessons/intro.mp4" style={{ width: '100%', aspectRatio: 16 / 9 }} />;
-<VideoPlayer source="https://cdn.example.com/live/index.m3u8" style={{ width: '100%', aspectRatio: 16 / 9 }} />;
+<VideoPlayer url="https://youtu.be/dQw4w9WgXcQ" style={{ width: '100%', aspectRatio: 16 / 9 }} />;
+<VideoPlayer url="https://cdn.example.com/lessons/intro.mp4" style={{ width: '100%', aspectRatio: 16 / 9 }} />;
+<VideoPlayer url="https://cdn.example.com/live/index.m3u8" style={{ width: '100%', aspectRatio: 16 / 9 }} />;
 ```
 
 Give the player a size; 16:9 suits most videos.
@@ -62,7 +62,7 @@ Give the player a size; 16:9 suits most videos.
 ```tsx
 const player = useRef<VideoPlayerRef>(null);
 
-<VideoPlayer ref={player} source="https://cdn.example.com/a.mp4" onEnd={() => console.log('done')} />;
+<VideoPlayer ref={player} url="https://cdn.example.com/a.mp4" onEnd={() => console.log('done')} />;
 
 player.current?.seekTo(90);
 player.current?.play();
@@ -80,7 +80,7 @@ Props marked <sup>*</sup> are required.
 
 | Prop | Type | Default | |
 |---|---|---|---|
-| `source` <sup>*</sup> | `string` | — | Any video URL, or a YouTube id/link. |
+| `url` <sup>*</sup> | `string` | — | Any video URL, or a YouTube id/link. |
 | `autoPlay` | `boolean` | `false` | Play as soon as the player is ready. |
 | `startSeconds` | `number` | `0` | Start position. |
 | `hideYouTubeBranding` | `boolean` | `true` | YouTube only: clip YouTube's overlays and cover its start/end screens with the thumbnail. |
@@ -136,7 +136,7 @@ formatTime(3725);                               // '1:02:05'
 
 ## Errors
 
-Video files and streams report a `message` and no `code`. On Android the message is one of "A network error stopped the video from loading", "The video link is invalid or has expired" or "The video format is not supported", falling back to the player's own message. On iOS it is the system's error description. A `source` that is neither a YouTube video nor an http(s) URL reports "Not a YouTube link or a video URL".
+Video files and streams report a `message` and no `code`. On Android the message is one of "A network error stopped the video from loading", "The video link is invalid or has expired" or "The video format is not supported", falling back to the player's own message. On iOS it is the system's error description. A `url` that is neither a YouTube video nor an http(s) URL reports "Not a YouTube link or a video URL".
 
 YouTube reports a `code`:
 
