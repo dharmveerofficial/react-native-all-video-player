@@ -1,0 +1,31 @@
+# Publishes to npm when a GitHub release is published, using npm trusted
+# publishing (OIDC): no NPM_TOKEN secret, and provenance is attached
+# automatically. The release tag should match package.json's version (v0.2.0).
+name: Publish to npm
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # lets npm verify this workflow via OIDC
+    steps:
+      - uses: actions/checkout@v4
+
+      # Trusted publishing needs npm 11.5.1+, which ships with Node 24.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
+      # `prepare` builds lib/ before packing.
+      - run: npm publish --access public

@@ -1,0 +1,139 @@
+import type * as React from 'react';
+import { forwardRef, useCallback, useImperativeHandle, useMemo, useRef } from 'react';
+import type { NativeSyntheticEvent, StyleProp, ViewStyle } from 'react-native';
+import AVPVideoView, { Commands as VideoCommands } from '../specs/AVPVideoViewNativeComponent';
+import AVPWebView, { Commands as WebViewCommands } from '../specs/AVPWebViewNativeComponent';
+import { PlayerState, type PlayerError } from '../types';
+import { YOUTUBE_ERROR_MESSAGES, youtubeHtml } from '../youtubeHtml';
+
+export interface EngineHandle {
+  play(): void;
+  pause(): void;
+  seekTo(seconds: number): void;
+  setRate(rate: number): void;
+  setMuted(muted: boolean): void;
+}
+
+export interface EngineProps {
+  startSeconds: number;
+  style?: StyleProp<ViewStyle>;
+  onReady(duration: number): void;
+  onState(state: PlayerState): void;
+  onTime(currentTime: number, duration: number): void;
+  onError(error: PlayerError): void;
+}
+
+// YouTube refuses embeds without a referring https origin; any one works.
+const EMBED_ORIGIN = 'https://localhost';
+
+interface PageMessage {
+  type: 'ready' | 'state' | 'time' | 'error';
+  state?: number;
+  current?: number;
+  duration?: number;
+  code?: number;
+  message?: string;
+}
+
+export const YouTubeEngine = forwardRef<EngineHandle, EngineProps & { videoId: string; hideBranding: boolean }>(
+  function YouTubeEngine({ videoId, hideBranding, startSeconds, style, onReady, onState, onTime, onError }, ref) {
+    const viewRef = useRef<React.ElementRef<typeof AVPWebView>>(null);
+    const html = useMemo(
+      () => youtubeHtml({ videoId, origin: EMBED_ORIGIN, startSeconds, hideBranding }),
+      [videoId, startSeconds, hideBranding],
+    );
+
+    const run = useCallback((script: string) => {
+      if (viewRef.current) WebViewCommands.injectJavaScript(viewRef.current, `if (player && ready) { ${script} }`);
+    }, []);
+
+    useImperativeHandle(
+      ref,
+      () => ({
+        play: () => run('player.playVideo();'),
+        pause: () => run('player.pauseVideo();'),
+        seekTo: seconds => run(`player.seekTo(${Number(seconds) || 0}, true);`),
+        setRate: rate => run(`player.setPlaybackRate(${Number(rate) || 1});`),
+        setMuted: muted => run(muted ? 'player.mute();' : 'player.unMute();'),
+      }),
+      [run],
+    );
+
+    const onMessage = (event: NativeSyntheticEvent<{ data: string }>) => {
+      let message: PageMessage;
+      try {
+        message = JSON.parse(event.nativeEvent.data);
+      } catch {
+        return;
+      }
+      switch (message.type) {
+        case 'ready':
+          onReady(message.duration ?? 0);
+          break;
+        case 'state':
+          onState((message.state ?? PlayerState.Unstarted) as PlayerState);
+          break;
+        case 'time':
+          onTime(message.current ?? 0, message.duration ?? 0);
+          break;
+        case 'error':
+          onError({
+            code: message.code,
+            message:
+              (message.code !== undefined && YOUTUBE_ERROR_MESSAGES[message.code]) ||
+              message.message ||
+              'The video could not be played',
+          });
+          break;
+      }
+    };
+
+    return (
+      <AVPWebView
+        ref={viewRef}
+        style={style}
+        html={html}
+        baseUrl={EMBED_ORIGIN}
+        onMessage={onMessage}
+        onLoadError={() => onError({ message: 'The YouTube player failed to load' })}
+      />
+    );
+  },
+);
+
+export const NativeVideoEngine = forwardRef<EngineHandle, EngineProps & { url: string }>(function NativeVideoEngine(
+  { url, startSeconds, style, onReady, onState, onTime, onError },
+  ref,
+) {
+  const viewRef = useRef<React.ElementRef<typeof AVPVideoView>>(null);
+  const call = useCallback((fn: (view: React.ElementRef<typeof AVPVideoView>) => void) => {
+    if (viewRef.current) fn(viewRef.current);
+  }, []);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      play: () => call(view => VideoCommands.play(view)),
+      pause: () => call(view => VideoCommands.pause(view)),
+      seekTo: seconds => call(view => VideoCommands.seekTo(view, Math.max(0, Number(seconds) || 0))),
+      setRate: rate => call(view => VideoCommands.setRate(view, Number(rate) || 1)),
+      setMuted: muted => call(view => VideoCommands.setMuted(view, muted)),
+    }),
+    [call],
+  );
+
+  return (
+    <AVPVideoView
+      ref={viewRef}
+      style={style}
+      source={url}
+      onVideoReady={e => {
+        if (startSeconds > 0) call(view => VideoCommands.seekTo(view, startSeconds));
+        onReady(e.nativeEvent.duration);
+      }}
+      onVideoState={e => onState(e.nativeEvent.state as PlayerState)}
+      onVideoProgress={e => onTime(e.nativeEvent.currentTime, e.nativeEvent.duration)}
+      onVideoError={e => onError({ message: e.nativeEvent.message || 'The video could not be played' })}
+    />
+  );
+});

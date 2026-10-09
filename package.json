@@ -1,0 +1,83 @@
+{
+  "name": "react-native-all-video-player",
+  "version": "0.1.0",
+  "description": "One video player for React Native: pass any URL — YouTube links, mp4/mov/webm files, HLS (m3u8) and DASH (mpd) streams — and get the same custom controls and built-in landscape fullscreen. Native playback (ExoPlayer / AVPlayer), nothing else to install (New Architecture).",
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "react-native": "src/index.ts",
+  "source": "src/index.ts",
+  "files": [
+    "src",
+    "lib",
+    "android",
+    "ios",
+    "react-native-all-video-player.podspec",
+    "!**/__tests__",
+    "!android/build",
+    "!android/.gradle",
+    "!ios/build"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test \"test/**/*.test.ts\"",
+    "prepare": "npm run build"
+  },
+  "keywords": [
+    "react-native",
+    "video",
+    "video-player",
+    "youtube",
+    "youtube-player",
+    "exoplayer",
+    "avplayer",
+    "hls",
+    "dash",
+    "mp4",
+    "custom-controls",
+    "fullscreen",
+    "orientation"
+  ],
+  "author": "Dharm Veer",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dharmveerofficial/react-native-youtube-custom-player.git"
+  },
+  "homepage": "https://github.com/dharmveerofficial/react-native-youtube-custom-player#readme",
+  "bugs": {
+    "url": "https://github.com/dharmveerofficial/react-native-youtube-custom-player/issues"
+  },
+  "peerDependencies": {
+    "react": ">=18",
+    "react-native": ">=0.81"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.0",
+    "react": "19.2.3",
+    "react-native": "0.86.0",
+    "typescript": "~5.9.3"
+  },
+  "engines": {
+    "node": ">=22.6"
+  },
+  "codegenConfig": {
+    "name": "RNAllVideoPlayerSpec",
+    "type": "all",
+    "jsSrcsDir": "src/specs",
+    "android": {
+      "javaPackageName": "com.allvideoplayer"
+    },
+    "ios": {
+      "componentProvider": {
+        "AVPWebView": "AVPWebView",
+        "AVPVideoView": "AVPVideoView"
+      },
+      "modulesProvider": {
+        "AVPOrientation": "AVPOrientation"
+      }
+    }
+  }
+}
