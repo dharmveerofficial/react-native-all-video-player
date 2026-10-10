@@ -44,10 +44,6 @@ export type VideoSource =
 export type VideoPlayerProps = VideoSource & VideoPlayerOptions;
 
 export interface VideoPlayerOptions {
-  /** Playlists: the "Autoplay next" switch; follows the prop when it changes. Default true. */
-  autoPlayNext?: boolean;
-  /** Playlists: the viewer flipped "Autoplay next" (e.g. save it and pass it back). */
-  onAutoPlayNextChange?: (enabled: boolean) => void;
   autoPlay?: boolean;
   startSeconds?: number;
   /** YouTube only: show the video's thumbnail before the first play and at the end. Default false. */

@@ -53,8 +53,6 @@ Give the player a size; 16:9 suits most videos. Pass `url` or `playlist`; TypeSc
 ### Playlists
 
 ```tsx
-const [autoNext, setAutoNext] = useState(true);
-
 <VideoPlayer
   playlist={[
     'https://youtu.be/dQw4w9WgXcQ',
@@ -62,8 +60,6 @@ const [autoNext, setAutoNext] = useState(true);
     'https://cdn.example.com/lessons/part-2.m3u8',
   ]}
   playlistStartIndex={1}
-  autoPlayNext={autoNext}
-  onAutoPlayNextChange={setAutoNext}
   onVideoChange={(index, url) => console.log('now playing', index, url)}
   style={{ width: '100%', aspectRatio: 16 / 9 }}
 />;
@@ -121,8 +117,6 @@ See [`example/App.tsx`](example/App.tsx) for a runnable screen.
 | `url` | `string` | — | Any video URL, or a YouTube id/link. Required unless `playlist` is given. |
 | `playlist` | `string[]` | — | Videos to play in order, YouTube and files mixed; used instead of `url`. Adds previous/next buttons and "Autoplay next" in settings. |
 | `playlistStartIndex` | `number` | `0` | Playlists: the video to start with. |
-| `autoPlayNext` | `boolean` | `true` | Playlists: the "Autoplay next" switch; follows the prop when it changes. |
-| `onAutoPlayNextChange` | `(enabled: boolean) => void` | — | Playlists: the viewer flipped "Autoplay next" (save it and pass it back to remember it). |
 | `onVideoChange` | `(index: number, url: string) => void` | — | Playlists: the player moved to another video (previous/next or autoplay). |
 | `autoPlay` | `boolean` | `false` | Play as soon as the player is ready. |
 | `startSeconds` | `number` | `0` | Start position. |

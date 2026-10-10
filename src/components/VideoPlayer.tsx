@@ -685,8 +685,6 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(function
     onVideoChange,
     playlist,
     playlistStartIndex = 0,
-    autoPlayNext = true,
-    onAutoPlayNextChange,
     allowPictureInPicture = true,
     onPictureInPictureChange,
     ...surfaceProps
@@ -709,8 +707,8 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(function
   const playlistKey = urls.join('\n');
   const firstIndex = Math.min(Math.max(0, Math.floor(playlistStartIndex) || 0), urls.length - 1);
   const [index, setIndex] = useState(firstIndex);
-  const [autoNext, setAutoNext] = useState(autoPlayNext);
-  useEffect(() => setAutoNext(autoPlayNext), [autoPlayNext]);
+  // The settings menu's "Autoplay next" switch; on until the viewer turns it off.
+  const [autoNext, setAutoNext] = useState(true);
   // After moving on by itself, the next video starts playing without a tap.
   const [advanced, setAdvanced] = useState(false);
   useEffect(() => {
@@ -741,12 +739,7 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(function
   const isPlaylist = urls.length > 1;
   const autoNextProps = {
     autoPlayNext: autoNext,
-    onAutoPlayNextChange: isPlaylist
-      ? (enabled: boolean) => {
-        setAutoNext(enabled);
-        onAutoPlayNextChange?.(enabled);
-      }
-      : undefined,
+    onAutoPlayNextChange: isPlaylist ? setAutoNext : undefined,
     playlistNav: isPlaylist
       ? {
         onPrevious: index > 0 ? () => goTo(index - 1) : undefined,
