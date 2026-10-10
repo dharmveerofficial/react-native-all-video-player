@@ -32,6 +32,13 @@ class AVPVideoViewManager : SimpleViewManager<AVPVideoView>(), AVPVideoViewManag
 
   override fun setMuted(view: AVPVideoView, muted: Boolean) = view.setMuted(muted)
 
+  // Picture in picture is activity-wide on Android (AVPPictureInPictureModule); these are iOS-only.
+  override fun setPictureInPicture(view: AVPVideoView, value: Boolean) = Unit
+
+  override fun setAutoEnterPictureInPicture(view: AVPVideoView, value: Boolean) = Unit
+
+  override fun startPictureInPicture(view: AVPVideoView) = Unit
+
   override fun onDropViewInstance(view: AVPVideoView) {
     super.onDropViewInstance(view)
     view.destroy()

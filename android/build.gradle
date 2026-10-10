@@ -64,3 +64,46 @@ dependencies {
   implementation "androidx.media3:media3-exoplayer-dash:$media3"
   implementation "androidx.media3:media3-ui:$media3"
 }
+
+// Picture in picture needs android:supportsPictureInPicture="true" on the activity, which only
+// the app's manifest can declare. So the app doesn't have to, this marks the app's launcher
+// activity (React Native's MainActivity) in the merged manifest when the app builds.
+// Opt out with allVideoPlayerPictureInPicture=false in the app's gradle.properties.
+def enablePictureInPicture = !rootProject.hasProperty("allVideoPlayerPictureInPicture") ||
+  rootProject.property("allVideoPlayerPictureInPicture").toString() != "false"
+
+if (enablePictureInPicture) {
+  rootProject.allprojects { p ->
+    p.tasks.configureEach { t ->
+      if (!(t.name ==~ /^process\w*MainManifest$/)) return
+      t.doLast {
+        if (!p.plugins.hasPlugin("com.android.application")) return
+        def manifest = t.hasProperty("mergedManifest") ? t.mergedManifest.get().asFile : null
+        if (manifest == null || !manifest.exists()) return
+        markLauncherForPictureInPicture(manifest)
+      }
+    }
+  }
+}
+
+static void markLauncherForPictureInPicture(File manifest) {
+  def androidNs = "http://schemas.android.com/apk/res/android"
+  def factory = javax.xml.parsers.DocumentBuilderFactory.newInstance()
+  factory.namespaceAware = true
+  def doc = factory.newDocumentBuilder().parse(manifest)
+  def activities = doc.getElementsByTagName("activity")
+  def changed = false
+  for (int i = 0; i < activities.length; i++) {
+    def activity = activities.item(i)
+    def categories = activity.getElementsByTagName("category")
+    def launcher = (0..<categories.length).any {
+      categories.item(it).getAttributeNS(androidNs, "name") == "android.intent.category.LAUNCHER"
+    }
+    if (!launcher || activity.hasAttributeNS(androidNs, "supportsPictureInPicture")) continue
+    activity.setAttributeNS(androidNs, "android:supportsPictureInPicture", "true")
+    changed = true
+  }
+  if (!changed) return
+  def transformer = javax.xml.transform.TransformerFactory.newInstance().newTransformer()
+  transformer.transform(new javax.xml.transform.dom.DOMSource(doc), new javax.xml.transform.stream.StreamResult(manifest))
+}

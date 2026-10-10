@@ -15,7 +15,7 @@ Pod::Spec.new do |s|
 
   s.source_files = "ios/**/*.{h,m,mm}"
   s.private_header_files = "ios/**/*.h"
-  s.frameworks   = "WebKit", "AVFoundation"
+  s.frameworks   = "WebKit", "AVFoundation", "AVKit"
 
   install_modules_dependencies(s)
 end

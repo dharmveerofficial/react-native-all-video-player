@@ -12,6 +12,8 @@ export interface EngineHandle {
   seekTo(seconds: number): void;
   setRate(rate: number): void;
   setMuted(muted: boolean): void;
+  /** iOS video files only; a no-op elsewhere. */
+  startPictureInPicture(): void;
 }
 
 export interface EngineProps {
@@ -40,17 +42,20 @@ type YouTubeEngineProps = EngineProps & {
   hideBranding: boolean;
   thumbnailOnPause: boolean;
   thumbnail?: string;
+  /** Play as soon as it loads; read once, so changing it later doesn't reload the page. */
+  autoPlay: boolean;
 };
 
 export const YouTubeEngine = forwardRef<EngineHandle, YouTubeEngineProps>(
   function YouTubeEngine(
-    { videoId, hideBranding, thumbnailOnPause, thumbnail, startSeconds, style, onReady, onState, onTime, onError },
+    { videoId, hideBranding, thumbnailOnPause, thumbnail, autoPlay, startSeconds, style, onReady, onState, onTime, onError },
     ref,
   ) {
     const viewRef = useRef<React.ElementRef<typeof AVPWebView>>(null);
+    const playOnLoad = useRef(autoPlay).current;
     const html = useMemo(
-      () => youtubeHtml({ videoId, origin: EMBED_ORIGIN, startSeconds, hideBranding, thumbnailOnPause, thumbnail }),
-      [videoId, startSeconds, hideBranding, thumbnailOnPause, thumbnail],
+      () => youtubeHtml({ videoId, origin: EMBED_ORIGIN, startSeconds, hideBranding, thumbnailOnPause, thumbnail, autoPlay: playOnLoad }),
+      [videoId, startSeconds, hideBranding, thumbnailOnPause, thumbnail, playOnLoad],
     );
 
     const run = useCallback((script: string) => {
@@ -65,6 +70,7 @@ export const YouTubeEngine = forwardRef<EngineHandle, YouTubeEngineProps>(
         seekTo: seconds => run(`player.seekTo(${Number(seconds) || 0}, true);`),
         setRate: rate => run(`player.setPlaybackRate(${Number(rate) || 1});`),
         setMuted: muted => run(muted ? 'player.mute();' : 'player.unMute();'),
+        startPictureInPicture: () => {},
       }),
       [run],
     );
@@ -116,10 +122,29 @@ type NativeVideoEngineProps = EngineProps & {
   /** Grab a frame from the video to use as its thumbnail. */
   grabPoster: boolean;
   onPoster(uri: string): void;
+  /** iOS: allow picture in picture, and start it by itself when the app goes to the background. */
+  pictureInPicture: boolean;
+  autoEnterPictureInPicture: boolean;
+  onPictureInPicturePossible(possible: boolean): void;
+  onPictureInPicture(active: boolean): void;
 };
 
 export const NativeVideoEngine = forwardRef<EngineHandle, NativeVideoEngineProps>(function NativeVideoEngine(
-  { url, grabPoster, startSeconds, style, onReady, onState, onTime, onError, onPoster },
+  {
+    url,
+    grabPoster,
+    pictureInPicture,
+    autoEnterPictureInPicture,
+    startSeconds,
+    style,
+    onReady,
+    onState,
+    onTime,
+    onError,
+    onPoster,
+    onPictureInPicturePossible,
+    onPictureInPicture,
+  },
   ref,
 ) {
   const viewRef = useRef<React.ElementRef<typeof AVPVideoView>>(null);
@@ -135,6 +160,7 @@ export const NativeVideoEngine = forwardRef<EngineHandle, NativeVideoEngineProps
       seekTo: seconds => call(view => VideoCommands.seekTo(view, Math.max(0, Number(seconds) || 0))),
       setRate: rate => call(view => VideoCommands.setRate(view, Number(rate) || 1)),
       setMuted: muted => call(view => VideoCommands.setMuted(view, muted)),
+      startPictureInPicture: () => call(view => VideoCommands.startPictureInPicture(view)),
     }),
     [call],
   );
@@ -145,6 +171,8 @@ export const NativeVideoEngine = forwardRef<EngineHandle, NativeVideoEngineProps
       style={style}
       source={url}
       grabPoster={grabPoster}
+      pictureInPicture={pictureInPicture}
+      autoEnterPictureInPicture={autoEnterPictureInPicture}
       onVideoReady={e => {
         if (startSeconds > 0) call(view => VideoCommands.seekTo(view, startSeconds));
         onReady(e.nativeEvent.duration);
@@ -153,6 +181,8 @@ export const NativeVideoEngine = forwardRef<EngineHandle, NativeVideoEngineProps
       onVideoProgress={e => onTime(e.nativeEvent.currentTime, e.nativeEvent.duration)}
       onVideoError={e => onError({ message: e.nativeEvent.message || 'The video could not be played' })}
       onVideoPoster={e => onPoster(e.nativeEvent.uri)}
+      onVideoPictureInPicturePossible={e => onPictureInPicturePossible(e.nativeEvent.possible)}
+      onVideoPictureInPicture={e => onPictureInPicture(e.nativeEvent.active)}
     />
   );
 });

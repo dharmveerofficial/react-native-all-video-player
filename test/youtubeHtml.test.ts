@@ -124,3 +124,8 @@ test('thumbnail URL cannot break out of the CSS url()', () => {
   assert.doesNotMatch(html, /<\/style><script>alert/);
   assert.match(html, /a%22\.jpg%29%3C\/style%3E%3Cscript%3Ealert%281%29%3C\/script%3E/);
 });
+
+test('autoPlay starts the video from inside the page once the player is ready', () => {
+  assert.match(youtubeHtml({ ...base, autoPlay: true }), /if \(true\) player\.playVideo\(\);/);
+  assert.match(youtubeHtml(base), /if \(false\) player\.playVideo\(\);/);
+});

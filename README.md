@@ -1,14 +1,23 @@
 # react-native-all-video-player
 
-One video player for React Native. Pass **any video URL**: YouTube links, mp4/mov/webm files, HLS (`.m3u8`) and DASH (`.mpd`) streams, signed stream links and S3/CDN files. You get the same custom controls and fullscreen for all of them.
+One video player for React Native. Pass **any video URL**: YouTube links, mp4/mov/webm files, HLS (`.m3u8`) and DASH (`.mpd`) streams, signed stream links and S3/CDN files. Every source gets the same custom controls, settings menu and fullscreen.
 
-- **Native playback** for video files and streams: ExoPlayer (Media3) on Android, AVPlayer on iOS.
-- **YouTube** plays through the official [IFrame Player API](https://developers.google.com/youtube/iframe_api_reference). YouTube has no native player you can embed. Its controls, title bar, logo and "More videos" strip are hidden, and taps never reach YouTube's UI.
-- **Custom controls:** play/pause, ±10 s skip, draggable seek bar, time, a speed menu and fullscreen.
+| Controls | Settings |
+|---|---|
+| ![Player controls with previous/next, seek bar, settings and fullscreen](docs/screenshots/controls.png) | ![Playback speed list](docs/screenshots/speed.png) |
+
+![Fullscreen with the settings menu: playback speed and Autoplay next](docs/screenshots/settings.png)
+
+## Features
+
+- **Any source:** YouTube and video files or streams, through one component. Video files and streams play natively: ExoPlayer (Media3) on Android, AVPlayer on iOS.
+- **Custom controls:** play/pause, double-tap left/right to seek, draggable seek bar and time.
+- **Settings menu:** playback speed (0.25x to 2x) and, for playlists, an "Autoplay next" switch.
+- **Playlists:** pass `playlist` with any mix of YouTube links and video files to get previous/next buttons and autoplay of the next video.
+- **Thumbnails:** your own image, or a frame grabbed from the video, shown before the first play and at the end (and optionally while paused).
 - **Built-in fullscreen:** rotates to landscape, hides the status bar, handles Android's back button, and restores everything on exit.
+- **Picture in picture:** supported too.
 - **One install:** nothing else to add, no AppDelegate/MainActivity changes.
-
-> **Before you ship:** YouTube's [API Terms](https://developers.google.com/youtube/terms/developer-policies) don't allow obscuring YouTube branding in embedded players. Hiding it is off by default, so YouTube's overlays show normally. Turning on `hideYouTubeBranding` is your call.
 
 ## Installation
 
@@ -39,7 +48,38 @@ import { VideoPlayer } from 'react-native-all-video-player';
 <VideoPlayer url="https://cdn.example.com/live/index.m3u8" style={{ width: '100%', aspectRatio: 16 / 9 }} />;
 ```
 
-Give the player a size; 16:9 suits most videos.
+Give the player a size; 16:9 suits most videos. Pass `url` or `playlist`; TypeScript reports an error if both are missing.
+
+### Playlists
+
+```tsx
+const [autoNext, setAutoNext] = useState(true);
+
+<VideoPlayer
+  playlist={[
+    'https://youtu.be/dQw4w9WgXcQ',
+    'https://cdn.example.com/lessons/intro.mp4',
+    'https://cdn.example.com/lessons/part-2.m3u8',
+  ]}
+  playlistStartIndex={1}
+  autoPlayNext={autoNext}
+  onAutoPlayNextChange={setAutoNext}
+  onVideoChange={(index, url) => console.log('now playing', index, url)}
+  style={{ width: '100%', aspectRatio: 16 / 9 }}
+/>;
+```
+
+- Previous/next buttons appear beside play/pause; each is dimmed at the start or end of the list. Pressing one starts that video.
+- With "Autoplay next" on (the default), the next video starts when one ends, inline or in fullscreen.
+- A playlist with one video behaves like a plain `url`.
+
+### Thumbnails
+
+```tsx
+<VideoPlayer url="https://cdn.example.com/a.mp4" thumbnail="https://cdn.example.com/a.jpg" thumbnailOnPause />;
+```
+
+The thumbnail covers the video before the first play and at the end, and while paused if `thumbnailOnPause` is set. Without `thumbnail`, video files (mp4, mov, webm, …) use a frame grabbed from the video, skipping blank frames; HLS/DASH streams get none.
 
 ### Supported sources
 
@@ -54,7 +94,7 @@ Give the player a size; 16:9 suits most videos.
 - On Android, streams are recognised by their `.m3u8` / `.mpd` extension; links without one play as regular files. iOS also detects HLS from the server's response.
 - Seeking needs a server that supports HTTP range requests.
 - Plain `http://` URLs need cleartext traffic allowed on Android and an App Transport Security exception on iOS.
-- Playback pauses when the app goes to the background.
+- Playback pauses when the app goes to the background, unless picture in picture takes over.
 - On iOS, playing a video file sets the app's audio session to playback, so sound plays even with the silent switch on.
 
 ### Controlling it from code
@@ -76,21 +116,24 @@ See [`example/App.tsx`](example/App.tsx) for a runnable screen.
 
 ## Props
 
-Props marked <sup>*</sup> are required.
-
 | Prop | Type | Default | |
 |---|---|---|---|
-| `url` <sup>*</sup> | `string` | — | Any video URL, or a YouTube id/link. |
+| `url` | `string` | — | Any video URL, or a YouTube id/link. Required unless `playlist` is given. |
+| `playlist` | `string[]` | — | Videos to play in order, YouTube and files mixed; used instead of `url`. Adds previous/next buttons and "Autoplay next" in settings. |
+| `playlistStartIndex` | `number` | `0` | Playlists: the video to start with. |
+| `autoPlayNext` | `boolean` | `true` | Playlists: the "Autoplay next" switch; follows the prop when it changes. |
+| `onAutoPlayNextChange` | `(enabled: boolean) => void` | — | Playlists: the viewer flipped "Autoplay next" (save it and pass it back to remember it). |
+| `onVideoChange` | `(index: number, url: string) => void` | — | Playlists: the player moved to another video (previous/next or autoplay). |
 | `autoPlay` | `boolean` | `false` | Play as soon as the player is ready. |
 | `startSeconds` | `number` | `0` | Start position. |
-| `hideYouTubeBranding` | `boolean` | `false` | YouTube only: clip YouTube's overlays and cover its start and end screens with the thumbnail. |
-| `thumbnail` | `string` | — | Image URL shown over the video before the first play and after the end, for any source. For YouTube it replaces the video's own thumbnail and turns the cover on even without `hideYouTubeBranding`. Without one, video files (mp4, mov, webm, …) use a frame grabbed from the video (10%, 25% or 50% in, skipping blank frames); HLS/DASH streams get none. |
-| `thumbnailOnPause` | `boolean` | `false` | Also show the thumbnail while paused mid-video (YouTube needs `hideYouTubeBranding` or `thumbnail`). |
+| `thumbnail` | `string` | — | Image URL shown before the first play and at the end, for any source. See [Thumbnails](#thumbnails). |
+| `thumbnailOnPause` | `boolean` | `false` | Also show the thumbnail while paused mid-video. |
+| `hideYouTubeBranding` | `boolean` | `false` | YouTube only: show the video's own thumbnail before the first play and at the end. |
 | `showControls` | `boolean` | `true` | `false` gives a bare player you drive through the ref. |
-| `playbackRates` | `number[]` | `[0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2]` | Speeds listed in the speed menu; `[]` hides the speed button. |
-| `seekStepSeconds` | `number` | `10` | Step for the skip buttons and double-tap seeking; `0` turns both off. |
-| `doubleTapToSeek` | `boolean` | `true` | Double-tap left or right of the center controls to seek back / forward. |
-| `accentColor` | `string` | `#7C3AED` | Seek bar color. |
+| `playbackRates` | `number[]` | `[0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2]` | Speeds under Settings → Playback speed; `[]` removes that row (and the settings button, unless it's a playlist). |
+| `seekStepSeconds` | `number` | `10` | Seconds each double-tap seeks; `0` turns double-tap seeking off. |
+| `doubleTapToSeek` | `boolean` | `true` | Double-tap left or right of the center controls to seek back / forward. The areas start just past the previous/next buttons in a playlist, otherwise just past play/pause. |
+| `accentColor` | `string` | `#EF4444` | Seek bar, selected speed and switch color. |
 | `allowFullscreen` | `boolean` | `true` | Show the fullscreen button. |
 | `onFullscreenChange` | `(fullscreen: boolean) => void` | — | |
 | `style` | `ViewStyle` | — | Size and position. |
@@ -121,9 +164,13 @@ import {
   type PlayerError,
   type ProgressEvent,
   type VideoPlayerProps,
+  type VideoPlayerOptions,
+  type VideoSource,
   type VideoPlayerRef,
 } from 'react-native-all-video-player';
 ```
+
+`VideoPlayerProps` is `VideoSource` (`url` or `playlist`) plus `VideoPlayerOptions` (everything else).
 
 `PlayerState` has the values `Unstarted` (-1), `Ended` (0), `Playing` (1), `Paused` (2), `Buffering` (3) and `Cued` (5). They're the same for every source.
 
@@ -142,18 +189,16 @@ formatTime(3725);                               // '1:02:05'
 
 Video files and streams report a `message` and no `code`. On Android the message is one of "A network error stopped the video from loading", "The video link is invalid or has expired" or "The video format is not supported", falling back to the player's own message. On iOS it is the system's error description. A `url` that is neither a YouTube video nor an http(s) URL reports "Not a YouTube link or a video URL".
 
-YouTube reports a `code`:
+YouTube videos report a `code`:
 
 | `code` | Meaning |
 |---|---|
 | `2` | Invalid video id. |
 | `5` | Can't be played in an HTML5 player. |
-| `100` | Not found, removed, or **private**. |
+| `100` | Not found, removed, or private. |
 | `101`, `150`, `152` | The owner disabled embedding. |
 | `153` | YouTube rejected the player configuration. |
-| none | The YouTube player failed to load (e.g. offline). |
-
-Private YouTube videos can't be embedded anywhere; use *unlisted* ones instead.
+| none | The player failed to load (e.g. offline). |
 
 ## Development
 

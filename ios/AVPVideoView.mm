@@ -1,6 +1,7 @@
 #import "AVPVideoView.h"
 
 #import <AVFoundation/AVFoundation.h>
+#import <AVKit/AVKit.h>
 #import <CommonCrypto/CommonDigest.h>
 
 #import <react/renderer/components/RNAllVideoPlayerSpec/ComponentDescriptors.h>
@@ -21,6 +22,7 @@ typedef NS_ENUM(NSInteger, AVPState) {
 };
 
 static void *kItemStatusContext = &kItemStatusContext;
+static void *kPipPossibleContext = &kPipPossibleContext;
 
 /** True for a near-uniform frame (black, or one flat colour). */
 static BOOL AVPIsFlat(CGImageRef image)
@@ -55,7 +57,7 @@ static void *kTimeControlContext = &kTimeControlContext;
 }
 @end
 
-@interface AVPVideoView () <RCTAVPVideoViewViewProtocol>
+@interface AVPVideoView () <RCTAVPVideoViewViewProtocol, AVPictureInPictureControllerDelegate>
 @end
 
 @implementation AVPVideoView {
@@ -64,6 +66,9 @@ static void *kTimeControlContext = &kTimeControlContext;
   NSString *_source;
   BOOL _grabPoster;
   NSString *_posterFor;
+  BOOL _pipAllowed;
+  BOOL _pipAutoEnter;
+  AVPictureInPictureController *_pip;
   id _timeObserver;
   BOOL _ready;
   BOOL _ended;
@@ -103,7 +108,68 @@ static void *kTimeControlContext = &kTimeControlContext;
   }
   _grabPoster = newProps.grabPoster;
   [self maybeGrabPoster];
+  _pipAllowed = newProps.pictureInPicture;
+  _pipAutoEnter = newProps.autoEnterPictureInPicture;
+  [self updatePictureInPicture];
   [super updateProps:props oldProps:oldProps];
+}
+
+// Picture in picture lifts the player layer out of the app; it needs the app's "audio"
+// background mode. The controller exists only while it's allowed.
+- (void)updatePictureInPicture
+{
+  if (!_pipAllowed || ![AVPictureInPictureController isPictureInPictureSupported]) {
+    [self releasePictureInPicture];
+    return;
+  }
+  if (_pip == nil) {
+    _pip = [[AVPictureInPictureController alloc] initWithPlayerLayer:(AVPlayerLayer *)_layerView.layer];
+    _pip.delegate = self;
+    [_pip addObserver:self
+           forKeyPath:@"pictureInPicturePossible"
+              options:NSKeyValueObservingOptionInitial | NSKeyValueObservingOptionNew
+              context:kPipPossibleContext];
+  }
+  if (@available(iOS 14.2, *)) {
+    _pip.canStartPictureInPictureAutomaticallyFromInline = _pipAutoEnter;
+  }
+}
+
+- (void)releasePictureInPicture
+{
+  if (_pip == nil) return;
+  [_pip removeObserver:self forKeyPath:@"pictureInPicturePossible" context:kPipPossibleContext];
+  if (_pip.isPictureInPictureActive) [_pip stopPictureInPicture];
+  _pip.delegate = nil;
+  _pip = nil;
+}
+
+- (void)startPictureInPicture
+{
+  if (_pip.isPictureInPicturePossible) [_pip startPictureInPicture];
+}
+
+- (void)pictureInPictureControllerDidStartPictureInPicture:(AVPictureInPictureController *)controller
+{
+  [self emitPictureInPicture:YES];
+}
+
+- (void)pictureInPictureControllerDidStopPictureInPicture:(AVPictureInPictureController *)controller
+{
+  [self emitPictureInPicture:NO];
+}
+
+- (void)pictureInPictureController:(AVPictureInPictureController *)controller
+    restoreUserInterfaceForPictureInPictureStopWithCompletionHandler:(void (^)(BOOL))completionHandler
+{
+  completionHandler(YES);
+}
+
+- (void)emitPictureInPicture:(BOOL)active
+{
+  if (!_eventEmitter) return;
+  std::static_pointer_cast<const AVPVideoViewEventEmitter>(_eventEmitter)
+      ->onVideoPictureInPicture(AVPVideoViewEventEmitter::OnVideoPictureInPicture{.active = (bool)active});
 }
 
 // Once per source, off the main thread; streams (HLS/DASH) just don't get one.
@@ -248,13 +314,17 @@ static void *kTimeControlContext = &kTimeControlContext;
 {
   [super prepareForRecycle];
   [self releasePlayer];
+  [self releasePictureInPicture];
   _source = nil;
   _grabPoster = NO;
+  _pipAllowed = NO;
+  _pipAutoEnter = NO;
   _rate = 1;
 }
 
 - (void)dealloc
 {
+  [self releasePictureInPicture];
   [self releasePlayer];
 }
 
@@ -263,7 +333,13 @@ static void *kTimeControlContext = &kTimeControlContext;
                         change:(NSDictionary *)change
                        context:(void *)context
 {
-  if (context == kItemStatusContext) {
+  if (context == kPipPossibleContext) {
+    if (_eventEmitter) {
+      std::static_pointer_cast<const AVPVideoViewEventEmitter>(_eventEmitter)
+          ->onVideoPictureInPicturePossible(
+              AVPVideoViewEventEmitter::OnVideoPictureInPicturePossible{.possible = (bool)_pip.isPictureInPicturePossible});
+    }
+  } else if (context == kItemStatusContext) {
     AVPlayerItem *item = _player.currentItem;
     if (item.status == AVPlayerItemStatusReadyToPlay && !_ready) {
       _ready = YES;

@@ -1,5 +1,4 @@
-import { Image, StyleSheet, Text, View, type ViewStyle } from 'react-native';
-import { FORWARD_10, FORWARD_ARROW, REPLAY_10, REPLAY_ARROW } from './iconImages';
+import { StyleSheet, Text, View, type ViewStyle } from 'react-native';
 
 interface IconProps {
   size: number;
@@ -39,53 +38,58 @@ export function ReplayIcon({ size, color }: IconProps) {
   return <Text style={{ color, fontSize: size * 1.1, lineHeight: size * 1.25, fontWeight: '700' }}>↻</Text>;
 }
 
-// Material replay_10 / forward_10; other steps draw the number on the plain arrow.
-export function SkipIcon({ size, color, seconds, forward }: IconProps & { seconds: number; forward: boolean }) {
-  const exact = seconds === 10;
-  const source = exact ? (forward ? FORWARD_10 : REPLAY_10) : forward ? FORWARD_ARROW : REPLAY_ARROW;
-  const fontSize = size * 0.25;
+// One straight arrow pointing left (mirrored for right): a shaft plus a chevron head.
+function LineArrow({ length, color, left }: { length: number; color: string; left: boolean }) {
+  const thickness = Math.max(2, length * 0.16);
+  const head = length * 0.62;
   return (
-    <View style={{ width: size, height: size }}>
-      <Image source={source} style={{ width: size, height: size, tintColor: color }} />
-      {!exact && (
-        <Text
-          style={[
-            styles.skipNumber,
-            { color, fontSize, lineHeight: fontSize * 1.1, top: size * 0.58 - fontSize * 0.55 },
-          ]}
-          numberOfLines={1}
-        >
-          {seconds}
-        </Text>
-      )}
+    <View style={{ width: length, height: length, justifyContent: 'center', transform: [{ scaleX: left ? 1 : -1 }] }}>
+      <View
+        style={{
+          position: 'absolute',
+          left: thickness * 0.4,
+          right: 0,
+          height: thickness,
+          borderRadius: thickness / 2,
+          backgroundColor: color,
+        }}
+      />
+      <View
+        style={{
+          position: 'absolute',
+          left: length * 0.12,
+          width: head,
+          height: head,
+          borderLeftWidth: thickness,
+          borderBottomWidth: thickness,
+          borderColor: color,
+          transform: [{ rotate: '45deg' }],
+        }}
+      />
     </View>
   );
 }
 
-// Four corner brackets: pointing out for "enter", in for "exit".
+// Two diagonal arrows: out to the top-left and bottom-right corners to enter fullscreen,
+// in toward the center to exit.
 export function FullscreenIcon({ size, color, exit }: IconProps & { exit: boolean }) {
-  const arm = size * 0.36;
-  const thickness = Math.max(2, size * 0.1);
-  const corner = (vertical: 'top' | 'bottom', horizontal: 'left' | 'right'): ViewStyle => {
-    const v = exit ? (vertical === 'top' ? 'bottom' : 'top') : vertical;
-    const h = exit ? (horizontal === 'left' ? 'right' : 'left') : horizontal;
-    return {
-      position: 'absolute',
-      width: arm,
-      height: arm,
-      [vertical]: 0,
-      [horizontal]: 0,
-      borderColor: color,
-      [`border${v[0].toUpperCase()}${v.slice(1)}Width`]: thickness,
-      [`border${h[0].toUpperCase()}${h.slice(1)}Width`]: thickness,
-    } as ViewStyle;
-  };
+  const span = size * 1.42;
+  const arrow = span * 0.42;
   return (
-    <View style={{ width: size, height: size }}>
-      <View style={corner('top', 'left')} />
-      <View style={corner('top', 'right')} />
-      <View style={corner('bottom', 'left')} />
-      <View style={corner('bottom', 'right')} />
+    <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
+      <View
+        style={{
+          width: span,
+          height: arrow,
+          flexDirection: 'row',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          transform: [{ rotate: '45deg' }],
+        }}
+      >
+        <LineArrow length={arrow} color={color} left={!exit} />
+        <LineArrow length={arrow} color={color} left={exit} />
+      </View>
     </View>
   );
 }
@@ -122,7 +126,48 @@ export function BackIcon({ size, color }: IconProps) {
   );
 }
 
+// Skip to the next / previous video: a triangle against a bar.
+export function TrackIcon({ size, color, next }: IconProps & { next: boolean }) {
+  const half = size / 2;
+  const bar = <View style={{ width: size * 0.16, height: size, backgroundColor: color, borderRadius: size * 0.04 }} />;
+  const triangle = (
+    <View
+      style={{
+        width: 0,
+        height: 0,
+        borderTopWidth: half,
+        borderBottomWidth: half,
+        borderTopColor: 'transparent',
+        borderBottomColor: 'transparent',
+        [next ? 'borderLeftWidth' : 'borderRightWidth']: size * 0.72,
+        [next ? 'borderLeftColor' : 'borderRightColor']: color,
+      }}
+    />
+  );
+  return (
+    <View style={[styles.row, { width: size, height: size, justifyContent: 'center' }]}>
+      {next ? triangle : bar}
+      {next ? bar : triangle}
+    </View>
+  );
+}
+
+// Gear: a ring with eight teeth (each tooth sits at the top of a rotated full-size box).
+export function SettingsIcon({ size, color }: IconProps) {
+  const ring = size * 0.68;
+  const tooth = size * 0.2;
+  return (
+    <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
+      {[0, 45, 90, 135, 180, 225, 270, 315].map(angle => (
+        <View key={angle} style={[StyleSheet.absoluteFill, { alignItems: 'center', transform: [{ rotate: `${angle}deg` }] }]}>
+          <View style={{ width: tooth, height: tooth, marginTop: size * 0.04, borderRadius: tooth * 0.2, backgroundColor: color }} />
+        </View>
+      ))}
+      <View style={{ width: ring, height: ring, borderRadius: ring / 2, borderWidth: size * 0.17, borderColor: color }} />
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
-  row: { flexDirection: 'row', alignItems: 'center' },
-  skipNumber: { position: 'absolute', left: 0, right: 0, textAlign: 'center', fontWeight: '700' },
+  row:{ flexDirection: 'row', alignItems: 'center' },
 });

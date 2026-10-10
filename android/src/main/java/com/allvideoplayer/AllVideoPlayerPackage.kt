@@ -9,20 +9,23 @@ import com.facebook.react.uimanager.ViewManager
 
 class AllVideoPlayerPackage : BaseReactPackage() {
 
-  override fun getModule(name: String, reactContext: ReactApplicationContext): NativeModule? =
-    if (name == AVPOrientationModule.NAME) AVPOrientationModule(reactContext) else null
+  override fun getModule(name: String, reactContext: ReactApplicationContext): NativeModule? = when (name) {
+    AVPOrientationModule.NAME -> AVPOrientationModule(reactContext)
+    AVPPictureInPictureModule.NAME -> AVPPictureInPictureModule(reactContext)
+    else -> null
+  }
 
   override fun getReactModuleInfoProvider() = ReactModuleInfoProvider {
-    mapOf(
-      AVPOrientationModule.NAME to ReactModuleInfo(
-        name = AVPOrientationModule.NAME,
-        className = AVPOrientationModule.NAME,
+    listOf(AVPOrientationModule.NAME, AVPPictureInPictureModule.NAME).associateWith { name ->
+      ReactModuleInfo(
+        name = name,
+        className = name,
         canOverrideExistingModule = false,
         needsEagerInit = false,
         isCxxModule = false,
         isTurboModule = true
       )
-    )
+    }
   }
 
   override fun createViewManagers(reactContext: ReactApplicationContext): List<ViewManager<*, *>> =

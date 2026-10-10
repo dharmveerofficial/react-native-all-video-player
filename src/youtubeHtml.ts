@@ -8,6 +8,8 @@ export interface YouTubeHtmlOptions {
   thumbnailOnPause: boolean;
   /** Cover image in place of YouTube's; passing one turns the cover on. */
   thumbnail?: string;
+  /** Start playing as soon as the player is ready, from inside the page. */
+  autoPlay?: boolean;
 }
 
 export const YOUTUBE_ERROR_MESSAGES: Record<number, string> = {
@@ -46,7 +48,7 @@ export function cssUrl(url: string): string {
 }
 
 export function youtubeHtml(options: YouTubeHtmlOptions): string {
-  const { videoId, origin, startSeconds, hideBranding, thumbnailOnPause, thumbnail } = options;
+  const { videoId, origin, startSeconds, hideBranding, thumbnailOnPause, thumbnail, autoPlay = false } = options;
   const start = Math.max(0, Math.floor(startSeconds));
   const flag = hideBranding ? 'true' : 'false';
   const onPause = thumbnailOnPause ? 'true' : 'false';
@@ -93,7 +95,13 @@ function onYouTubeIframeAPIReady() {
     playerVars: { controls: 0, disablekb: 1, fs: 0, rel: 0, playsinline: 1, iv_load_policy: 3,
                   modestbranding: 1, cc_load_policy: 0, start: ${start}, origin: ${JSON.stringify(origin)} },
     events: {
-      onReady: function () { ready = true; send({ type: 'ready', duration: player.getDuration() }); },
+      onReady: function () {
+        ready = true;
+        send({ type: 'ready', duration: player.getDuration() });
+        // Started here, not by a command from the app: commands can't arrive while the app is
+        // paused (e.g. a video switched to inside picture in picture).
+        if (${autoPlay ? 'true' : 'false'}) player.playVideo();
+      },
       onStateChange: function (e) { updateCover(e.data); send({ type: 'state', state: e.data }); },
       onError: function (e) { send({ type: 'error', code: e.data }); }
     }

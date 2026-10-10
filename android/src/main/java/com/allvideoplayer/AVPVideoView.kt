@@ -151,9 +151,17 @@ class AVPVideoView(private val reactContext: ThemedReactContext) :
     releasePlayer()
   }
 
-  override fun onHostPause() = pause()
+  // Keeps playing when the app shrinks into picture in picture.
+  override fun onHostPause() {
+    if (AVPPictureInPictureModule.leavingForPictureInPicture) return
+    val activity = reactContext.currentActivity
+    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N && activity?.isInPictureInPictureMode == true) return
+    pause()
+  }
 
-  override fun onHostResume() = Unit
+  override fun onHostResume() {
+    AVPPictureInPictureModule.leavingForPictureInPicture = false
+  }
 
   override fun onHostDestroy() = destroy()
 
