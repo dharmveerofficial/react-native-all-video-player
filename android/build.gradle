@@ -63,6 +63,7 @@ dependencies {
   implementation "androidx.media3:media3-exoplayer-hls:$media3"
   implementation "androidx.media3:media3-exoplayer-dash:$media3"
   implementation "androidx.media3:media3-ui:$media3"
+  implementation "androidx.webkit:webkit:1.12.1"
 }
 
 // Picture in picture needs android:supportsPictureInPicture="true" on the activity, which only

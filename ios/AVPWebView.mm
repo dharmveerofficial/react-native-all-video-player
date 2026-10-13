@@ -65,6 +65,28 @@ static NSString *const kBridgeName = @"AVPBridge";
                                            injectionTime:WKUserScriptInjectionTimeAtDocumentStart
                                         forMainFrameOnly:YES]];
 
+  // YouTube's own on-screen controls and branding live in its cross-origin iframe, out of the
+  // page's reach; this styles them away inside the iframe (branding only when the page marks it).
+  NSString *hideYouTubeUI =
+      @"(function () {"
+       "  if (!/(^|\\.)youtube\\.com$/.test(location.hostname)) return;"
+       "  var css = '.ytwPlayerMiddleControlsHost,.ytwPlayerBottomControlsHost,.ytPlayerProgressBarHost,.player-controls-background,.ytwPlayerSeekOverlayHost,.ytmCuedOverlayPlayButton,.ytp-large-play-button,.ytp-bezel,.ytp-spinner,.ytp-chrome-bottom,.ytp-gradient-bottom{display:none!important}';"
+       "  if (/[?&]avp_hide_branding=1(&|$)/.test(location.search)) css += '.ytwPlayerTopControlsHost,.ytwPlayerFullscreenControlsHost,.ytmCuedOverlayHost,.ytp-chrome-top,.ytp-gradient-top,.ytp-title,.ytp-watermark,.ytp-youtube-button,.ytp-pause-overlay,.html5-endscreen,.ytp-endscreen-content,.ytp-ce-element,.ytp-cards-teaser,.iv-branding{display:none!important}';"
+       "  var add = function () {"
+       "    if (document.getElementById('avp-hide-youtube-ui')) return;"
+       "    var style = document.createElement('style');"
+       "    style.id = 'avp-hide-youtube-ui';"
+       "    style.textContent = css;"
+       "    (document.head || document.documentElement).appendChild(style);"
+       "  };"
+       "  add();"
+       "  document.addEventListener('DOMContentLoaded', add);"
+       "})();";
+  [config.userContentController
+      addUserScript:[[WKUserScript alloc] initWithSource:hideYouTubeUI
+                                           injectionTime:WKUserScriptInjectionTimeAtDocumentStart
+                                        forMainFrameOnly:NO]];
+
   _webView = [[WKWebView alloc] initWithFrame:self.bounds configuration:config];
   _webView.navigationDelegate = self;
   _webView.opaque = NO;

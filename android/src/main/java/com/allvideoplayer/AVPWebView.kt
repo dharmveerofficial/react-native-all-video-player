@@ -10,6 +10,8 @@ import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.webkit.WebViewCompat
+import androidx.webkit.WebViewFeature
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.uimanager.ThemedReactContext
 
@@ -32,6 +34,12 @@ class AVPWebView(private val reactContext: ThemedReactContext) : WebView(reactCo
     CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
 
     addJavascriptInterface(Bridge(), "AVPBridge")
+
+    // YouTube's own on-screen controls and branding live in its cross-origin iframe, out of the
+    // page's reach; this styles them away inside the iframe.
+    if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+      WebViewCompat.addDocumentStartJavaScript(this, HIDE_YOUTUBE_UI, setOf("https://www.youtube.com"))
+    }
 
     webViewClient = object : WebViewClient() {
       // The page itself never navigates; YouTube's iframe (not main frame) loads freely.
@@ -73,6 +81,25 @@ class AVPWebView(private val reactContext: ThemedReactContext) : WebView(reactCo
   }
 
   companion object {
+    // Hides YouTube's own playback controls in its iframe, and its branding (title bar, logo,
+    // watermark, "More videos", end screen) when the page asks for it.
+    private val HIDE_YOUTUBE_UI = """
+      (function () {
+        var css = '.ytwPlayerMiddleControlsHost,.ytwPlayerBottomControlsHost,.ytPlayerProgressBarHost,.player-controls-background,.ytwPlayerSeekOverlayHost,.ytmCuedOverlayPlayButton,.ytp-large-play-button,.ytp-bezel,.ytp-spinner,.ytp-chrome-bottom,.ytp-gradient-bottom{display:none!important}';
+        // The page marks the iframe's URL when hideYouTubeBranding is on.
+        if (/[?&]avp_hide_branding=1(&|$)/.test(location.search)) css += '.ytwPlayerTopControlsHost,.ytwPlayerFullscreenControlsHost,.ytmCuedOverlayHost,.ytp-chrome-top,.ytp-gradient-top,.ytp-title,.ytp-watermark,.ytp-youtube-button,.ytp-pause-overlay,.html5-endscreen,.ytp-endscreen-content,.ytp-ce-element,.ytp-cards-teaser,.iv-branding{display:none!important}';
+        var add = function () {
+          if (document.getElementById('avp-hide-youtube-ui')) return;
+          var style = document.createElement('style');
+          style.id = 'avp-hide-youtube-ui';
+          style.textContent = css;
+          (document.head || document.documentElement).appendChild(style);
+        };
+        add();
+        document.addEventListener('DOMContentLoaded', add);
+      })();
+    """
+
     const val EVENT_MESSAGE = "topMessage"
     const val EVENT_LOAD_ERROR = "topLoadError"
   }

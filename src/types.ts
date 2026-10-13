@@ -46,12 +46,12 @@ export type VideoPlayerProps = VideoSource & VideoPlayerOptions;
 export interface VideoPlayerOptions {
   autoPlay?: boolean;
   startSeconds?: number;
-  /** YouTube only: show the video's thumbnail before the first play and at the end. Default false. */
+  /** YouTube only: hide YouTube's title bar, logo, watermark, "More videos" and end screen. Default false. */
   hideYouTubeBranding?: boolean;
   /**
    * Image URL shown over the video before the first play and after the end, for any
-   * source. Without one, YouTube uses the video's own thumbnail (when hideYouTubeBranding
-   * is on) and video files use a frame grabbed from the video, skipping blank ones (not for HLS/DASH streams).
+   * source. Without one, YouTube shows its own thumbnail and video files use a frame grabbed
+   * from the video, skipping blank ones (not for HLS/DASH streams).
    */
   thumbnail?: string;
   /** Also show the thumbnail while paused mid-video. Default false. */

@@ -122,7 +122,7 @@ See [`example/App.tsx`](example/App.tsx) for a runnable screen.
 | `startSeconds` | `number` | `0` | Start position. |
 | `thumbnail` | `string` | — | Image URL shown before the first play and at the end, for any source. See [Thumbnails](#thumbnails). |
 | `thumbnailOnPause` | `boolean` | `false` | Also show the thumbnail while paused mid-video. |
-| `hideYouTubeBranding` | `boolean` | `false` | YouTube only: show the video's own thumbnail before the first play and at the end. |
+| `hideYouTubeBranding` | `boolean` | `false` | YouTube only: hide YouTube's title bar, logo, watermark, "More videos" and end screen. |
 | `showControls` | `boolean` | `true` | `false` gives a bare player you drive through the ref. |
 | `playbackRates` | `number[]` | `[0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2]` | Speeds under Settings → Playback speed; `[]` removes that row (and the settings button, unless it's a playlist). |
 | `seekStepSeconds` | `number` | `10` | Seconds each double-tap seeks; `0` turns double-tap seeking off. |
