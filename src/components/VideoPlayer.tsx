@@ -201,12 +201,20 @@ const PlayerSurface = forwardRef<VideoPlayerRef, SurfaceProps>(function PlayerSu
   const backFeedback = useRef<SideFeedbackHandle>(null);
   const forwardFeedback = useRef<SideFeedbackHandle>(null);
 
+  // The clock moving means the video is playing, whatever the last state event said: YouTube in
+  // particular can leave a stale Buffering (or no Ready) behind while the video plays on.
+  const [advancing, setAdvancing] = useState(false);
+  const lastTickRef = useRef<number | null>(null);
+
   const playing = state === PlayerState.Playing;
   const buffering = state === PlayerState.Buffering;
   const ended = state === PlayerState.Ended;
+  const loading = (!ready || buffering) && !advancing;
 
   useEffect(() => {
     setReady(false);
+    setAdvancing(false);
+    lastTickRef.current = null;
     setState(PlayerState.Unstarted);
     setCurrent(0);
     setDuration(0);
@@ -301,6 +309,12 @@ const PlayerSurface = forwardRef<VideoPlayerRef, SurfaceProps>(function PlayerSu
       if (next === PlayerState.Ended) onEnd?.();
     },
     onTime: (time, reported) => {
+      // Ticks come about every 500 ms; up to 1.5 s of progress covers 2x speed, while a seek
+      // jumps further (or backwards) and doesn't count.
+      const last = lastTickRef.current;
+      lastTickRef.current = time;
+      const delta = last === null ? 0 : time - last;
+      setAdvancing(delta > 0.05 && delta < 1.5);
       const total = reported || timeRef.current.duration;
       timeRef.current = { current: time, duration: total };
       if (!draggingRef.current) setCurrent(time);
@@ -452,7 +466,7 @@ const PlayerSurface = forwardRef<VideoPlayerRef, SurfaceProps>(function PlayerSu
         accessible={false}
       />
 
-      {(!ready || buffering) && !inPictureInPicture && (
+      {loading && !inPictureInPicture && (
         <View style={styles.centerOverlay} pointerEvents="none">
           {renderLoading ? renderLoading() : <ActivityIndicator color={WHITE} size="large" />}
         </View>
@@ -476,46 +490,49 @@ const PlayerSurface = forwardRef<VideoPlayerRef, SurfaceProps>(function PlayerSu
               <BackIcon size={20} color={WHITE} />
             </TouchableOpacity>
           )}
-          <View style={styles.centerRow} pointerEvents="box-none">
-            {playlistNav && (
-              <TouchableOpacity
-                style={[styles.trackButton, !playlistNav.onPrevious && styles.trackButtonDisabled]}
-                onPress={playlistNav.onPrevious}
-                disabled={!playlistNav.onPrevious}
-                accessibilityRole="button"
-                accessibilityLabel="Previous video"
-                accessibilityState={{ disabled: !playlistNav.onPrevious }}
-              >
-                <TrackIcon size={TRACK_ICON} color={WHITE} next={false} />
-              </TouchableOpacity>
-            )}
-            <TouchableOpacity
-              style={styles.playButton}
-              onPress={togglePlay}
-              accessibilityRole="button"
-              accessibilityLabel={ended ? 'Replay' : playing ? 'Pause' : 'Play'}
-            >
-              {ended ? (
-                <ReplayIcon size={30} color={WHITE} />
-              ) : playing ? (
-                <PauseIcon size={24} color={WHITE} />
-              ) : (
-                <PlayIcon size={26} color={WHITE} />
+          {/* The spinner takes the center while loading, so the center buttons step aside. */}
+          {!loading && (
+            <View style={styles.centerRow} pointerEvents="box-none">
+              {playlistNav && (
+                <TouchableOpacity
+                  style={[styles.trackButton, !playlistNav.onPrevious && styles.trackButtonDisabled]}
+                  onPress={playlistNav.onPrevious}
+                  disabled={!playlistNav.onPrevious}
+                  accessibilityRole="button"
+                  accessibilityLabel="Previous video"
+                  accessibilityState={{ disabled: !playlistNav.onPrevious }}
+                >
+                  <TrackIcon size={TRACK_ICON} color={WHITE} next={false} />
+                </TouchableOpacity>
               )}
-            </TouchableOpacity>
-            {playlistNav && (
               <TouchableOpacity
-                style={[styles.trackButton, !playlistNav.onNext && styles.trackButtonDisabled]}
-                onPress={playlistNav.onNext}
-                disabled={!playlistNav.onNext}
+                style={styles.playButton}
+                onPress={togglePlay}
                 accessibilityRole="button"
-                accessibilityLabel="Next video"
-                accessibilityState={{ disabled: !playlistNav.onNext }}
+                accessibilityLabel={ended ? 'Replay' : playing ? 'Pause' : 'Play'}
               >
-                <TrackIcon size={TRACK_ICON} color={WHITE} next />
+                {ended ? (
+                  <ReplayIcon size={30} color={WHITE} />
+                ) : playing ? (
+                  <PauseIcon size={24} color={WHITE} />
+                ) : (
+                  <PlayIcon size={26} color={WHITE} />
+                )}
               </TouchableOpacity>
-            )}
-          </View>
+              {playlistNav && (
+                <TouchableOpacity
+                  style={[styles.trackButton, !playlistNav.onNext && styles.trackButtonDisabled]}
+                  onPress={playlistNav.onNext}
+                  disabled={!playlistNav.onNext}
+                  accessibilityRole="button"
+                  accessibilityLabel="Next video"
+                  accessibilityState={{ disabled: !playlistNav.onNext }}
+                >
+                  <TrackIcon size={TRACK_ICON} color={WHITE} next />
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
 
           <View style={styles.bottomBar}>
             <Text style={styles.time}>{formatTime(dragFraction !== null ? dragFraction * duration : current)}</Text>
