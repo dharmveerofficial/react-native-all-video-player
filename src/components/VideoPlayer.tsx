@@ -21,6 +21,7 @@ import {
 } from 'react-native';
 import { formatTime } from '../formatTime';
 import { resolveSource } from '../source';
+import { PlayerSettingsProvider, usePlayerSettings } from '../settingsContext';
 import NativeAVPPictureInPicture from '../specs/NativeAVPPictureInPicture';
 import { INITIAL_COVER, nextCover } from '../thumbnailCover';
 import {
@@ -133,6 +134,9 @@ type SurfaceProps = Omit<
   onAutoPlayNextChange?: (enabled: boolean) => void;
   /** Playlists only: previous/next video buttons; a missing handler disables that button. */
   playlistNav?: { onPrevious?: () => void; onNext?: () => void };
+  /** The viewer's captions choice, kept by the outer player across videos and fullscreen. */
+  captionsOn?: boolean;
+  onCaptionsChange?: (on: boolean) => void;
   /** Android: enters picture in picture for the whole player (it's activity-wide there). */
   onEnterPictureInPicture?: () => void;
   /** In the picture-in-picture window: no loading spinner (too small to help, and its redraws lag there). */
@@ -165,6 +169,8 @@ const PlayerSurface = forwardRef<VideoPlayerRef, SurfaceProps>(function PlayerSu
     autoPlayNext = false,
     onAutoPlayNextChange,
     playlistNav,
+    captionsOn = true,
+    onCaptionsChange,
     allowPictureInPicture = true,
     onPictureInPictureChange,
     onEnterPictureInPicture,
@@ -190,6 +196,8 @@ const PlayerSurface = forwardRef<VideoPlayerRef, SurfaceProps>(function PlayerSu
   const [dragFraction, setDragFraction] = useState<number | null>(null);
   const [cover, setCover] = useState(INITIAL_COVER);
   const [grabbedPoster, setGrabbedPoster] = useState<string>();
+  // Whether the current video has captions; whether they show is the captionsOn prop.
+  const [captionsAvailable, setCaptionsAvailable] = useState(false);
   // iOS: the video view says when picture in picture can start.
   const [pipPossible, setPipPossible] = useState(false);
   const [surfaceSize, setSurfaceSize] = useState({ width: 0, height: 0 });
@@ -206,9 +214,11 @@ const PlayerSurface = forwardRef<VideoPlayerRef, SurfaceProps>(function PlayerSu
   const [advancing, setAdvancing] = useState(false);
   const lastTickRef = useRef<number | null>(null);
 
-  const playing = state === PlayerState.Playing;
+  // A moving clock also counts as playing, and not ended: state events can be late or missed
+  // (YouTube especially), which would leave the play button showing the wrong icon.
+  const playing = state === PlayerState.Playing || advancing;
   const buffering = state === PlayerState.Buffering;
-  const ended = state === PlayerState.Ended;
+  const ended = state === PlayerState.Ended && !advancing;
   const loading = (!ready || buffering) && !advancing;
 
   useEffect(() => {
@@ -222,6 +232,7 @@ const PlayerSurface = forwardRef<VideoPlayerRef, SurfaceProps>(function PlayerSu
     setSettingsView(null);
     setCover(INITIAL_COVER);
     setGrabbedPoster(undefined);
+    setCaptionsAvailable(false);
     timeRef.current = { current: 0, duration: 0 };
     if (!resolved) onError?.({ message: 'Not a YouTube link or a video URL' });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -315,6 +326,9 @@ const PlayerSurface = forwardRef<VideoPlayerRef, SurfaceProps>(function PlayerSu
       lastTickRef.current = time;
       const delta = last === null ? 0 : time - last;
       setAdvancing(delta > 0.05 && delta < 1.5);
+      // The ready event can be lost when a video loads very fast (it fires before the native
+      // view is listening); time moving proves the player is ready, so the controls can show.
+      if (delta > 0.05) setReady(true);
       const total = reported || timeRef.current.duration;
       timeRef.current = { current: time, duration: total };
       if (!draggingRef.current) setCurrent(time);
@@ -322,11 +336,27 @@ const PlayerSurface = forwardRef<VideoPlayerRef, SurfaceProps>(function PlayerSu
       onProgress?.({ currentTime: time, duration: total });
     },
     onError: (error: PlayerError) => onError?.(error),
+    onCaptions: (available, on) => {
+      setCaptionsAvailable(available);
+      // Each new video (or the fullscreen player) starts from its own default; apply the choice.
+      if (available && on !== captionsOn) engineRef.current?.setCaptions(captionsOn);
+    },
   };
 
+  // Takes the new value (the Switch passes it), so the switch and its row both firing can't cancel out.
+  const toggleCaptions = (on: boolean) => {
+    onCaptionsChange?.(on);
+    engineRef.current?.setCaptions(on);
+  };
+
+  // What's on screen, read live: the controls only draw once the video is ready (so right after
+  // a video switch controlsVisible can be true with nothing showing), and a side tap toggles
+  // ~280 ms later, by when they may have auto-hidden. Either way a tap must show them.
+  const controlsVisibleRef = useRef(false);
+  controlsVisibleRef.current = showControls && ready && (controlsVisible || settingsView !== null);
   const toggleControls = () => {
     if (!showControls) return;
-    if (controlsVisible) {
+    if (controlsVisibleRef.current) {
       clearHideTimer();
       setControlsVisible(false);
     } else {
@@ -434,6 +464,7 @@ const PlayerSurface = forwardRef<VideoPlayerRef, SurfaceProps>(function PlayerSu
           thumbnailOnPause={thumbnailOnPause}
           thumbnail={thumbnail}
           autoPlay={autoPlay}
+          captions={captionsOn}
           {...engineProps}
         />
       ) : (
@@ -564,7 +595,7 @@ const PlayerSurface = forwardRef<VideoPlayerRef, SurfaceProps>(function PlayerSu
               <View style={[styles.thumb, { left: progress * trackWidth - 7 }]} pointerEvents="none" />
             </View>
             <Text style={styles.time}>{formatTime(duration)}</Text>
-            {(playbackRates.length > 0 || onAutoPlayNextChange) && (
+            {(playbackRates.length > 0 || onAutoPlayNextChange || captionsAvailable) && (
               <TouchableOpacity
                 style={styles.settingsButton}
                 onPress={settingsView ? closeSettings : openSettings}
@@ -605,6 +636,24 @@ const PlayerSurface = forwardRef<VideoPlayerRef, SurfaceProps>(function PlayerSu
                       >
                         <Text style={styles.settingsRowText}>Playback speed</Text>
                         <Text style={styles.settingsRowValue}>{rateLabel(rate)}  ›</Text>
+                      </TouchableOpacity>
+                    )}
+                    {captionsAvailable && (
+                      <TouchableOpacity
+                        style={styles.settingsRow}
+                        onPress={() => toggleCaptions(!captionsOn)}
+                        accessibilityRole="switch"
+                        accessibilityLabel="Captions"
+                        accessibilityState={{ checked: captionsOn }}
+                      >
+                        <Text style={styles.settingsRowText}>Captions</Text>
+                        <Switch
+                          value={captionsOn}
+                          onValueChange={toggleCaptions}
+                          trackColor={{ false: 'rgba(255,255,255,0.3)', true: accentColor }}
+                          thumbColor={WHITE}
+                          style={styles.settingsSwitch}
+                        />
                       </TouchableOpacity>
                     )}
                     {onAutoPlayNextChange && (
@@ -724,8 +773,11 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(function
   const playlistKey = urls.join('\n');
   const firstIndex = Math.min(Math.max(0, Math.floor(playlistStartIndex) || 0), urls.length - 1);
   const [index, setIndex] = useState(firstIndex);
-  // The settings menu's "Autoplay next" switch; on until the viewer turns it off.
-  const [autoNext, setAutoNext] = useState(true);
+  // The settings menu's "Captions" and "Autoplay next" choices, kept in the internal settings
+  // context for the app session: shared by every video, fullscreen and later players. On by default.
+  const [{ captionsOn, autoPlayNext: autoNext }, setSettings] = usePlayerSettings();
+  const setCaptionsOn = (on: boolean) => setSettings({ captionsOn: on });
+  const setAutoNext = (on: boolean) => setSettings({ autoPlayNext: on });
   // After moving on by itself, the next video starts playing without a tap.
   const [advanced, setAdvanced] = useState(false);
   useEffect(() => {
@@ -755,6 +807,8 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(function
   };
   const isPlaylist = urls.length > 1;
   const autoNextProps = {
+    captionsOn,
+    onCaptionsChange: setCaptionsOn,
     autoPlayNext: autoNext,
     onAutoPlayNextChange: isPlaylist ? setAutoNext : undefined,
     playlistNav: isPlaylist
@@ -824,7 +878,7 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(function
     // Optional call: an app still on an older native build doesn't have it yet.
     if (androidPip) NativeAVPPictureInPicture?.setActions?.(playing, isPlaylist, index > 0, hasNext);
   }, [androidPip, playing, isPlaylist, index, hasNext]);
-  const pipActionHandler = useRef<(action: string) => void>(() => {});
+  const pipActionHandler = useRef<(action: string) => void>(() => { });
   pipActionHandler.current = action => {
     const player = (modalOpen ? modalRef : inlineRef).current;
     const step = surfaceProps.seekStepSeconds ?? 10;
@@ -899,7 +953,7 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(function
   };
 
   return (
-    <>
+    <PlayerSettingsProvider>
       {modalOpen && <StatusBar hidden animated />}
       <PlayerSurface
         {...surfaceProps}
@@ -954,7 +1008,7 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(function
           />
         </Modal>
       )}
-    </>
+    </PlayerSettingsProvider>
   );
 });
 

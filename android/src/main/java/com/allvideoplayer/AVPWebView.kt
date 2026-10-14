@@ -97,6 +97,20 @@ class AVPWebView(private val reactContext: ThemedReactContext) : WebView(reactCo
         };
         add();
         document.addEventListener('DOMContentLoaded', add);
+        // Captions on/off from our page ({ avpCaptions: boolean }): YouTube's own captions
+        // setting doesn't reliably turn them off in its mobile player, so they're hidden here.
+        window.addEventListener('message', function (e) {
+          if (!e.data || typeof e.data.avpCaptions !== 'boolean') return;
+          var hide = document.getElementById('avp-hide-captions');
+          if (!e.data.avpCaptions && !hide) {
+            hide = document.createElement('style');
+            hide.id = 'avp-hide-captions';
+            hide.textContent = '.ytp-caption-window-container,.caption-window{display:none!important}';
+            (document.head || document.documentElement).appendChild(hide);
+          } else if (e.data.avpCaptions && hide) {
+            hide.remove();
+          }
+        });
       })();
     """
 

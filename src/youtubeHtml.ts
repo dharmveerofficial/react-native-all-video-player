@@ -14,6 +14,8 @@ export interface YouTubeHtmlOptions {
   thumbnail?: string;
   /** Start playing as soon as the player is ready, from inside the page. */
   autoPlay?: boolean;
+  /** Whether captions start on (when the video has them). Default true. */
+  captions?: boolean;
 }
 
 export const YOUTUBE_ERROR_MESSAGES: Record<number, string> = {
@@ -32,7 +34,7 @@ export function cssUrl(url: string): string {
 }
 
 export function youtubeHtml(options: YouTubeHtmlOptions): string {
-  const { videoId, origin, startSeconds, hideBranding, thumbnailOnPause, thumbnail, autoPlay = false } = options;
+  const { videoId, origin, startSeconds, hideBranding, thumbnailOnPause, thumbnail, autoPlay = false, captions = true } = options;
   const start = Math.max(0, Math.floor(startSeconds));
   const onPause = thumbnailOnPause ? 'true' : 'false';
   const coverOn = !!thumbnail;
@@ -67,23 +69,46 @@ function updateCover(state) {
   var show = ${coverOn} && (state === 0 || (state === 2 && ${onPause}) || (!hasPlayed && state !== 1));
   cover.className = show ? '' : 'hidden';
 }
+// Captions: YouTube loads them (cc_load_policy) and says whether the video has any; whether they
+// show is the viewer's choice, applied by the native WebView's script inside YouTube's iframe,
+// since YouTube's own captions setting doesn't reliably turn them off in its mobile player.
+var captionsWanted = ${captions ? 'true' : 'false'}, captionsAvailable = false;
+function postCaptions() {
+  var frame = document.getElementById('player');
+  if (frame && frame.contentWindow) frame.contentWindow.postMessage({ avpCaptions: captionsWanted }, '*');
+}
+function reportCaptions() {
+  var options = (player.getOptions && player.getOptions()) || [];
+  if (options.indexOf('captions') >= 0 || options.indexOf('cc') >= 0) captionsAvailable = true;
+  postCaptions();
+  send({ type: 'captions', available: captionsAvailable, on: captionsAvailable && captionsWanted });
+}
+function setCaptions(on) {
+  captionsWanted = on;
+  postCaptions();
+  reportCaptions();
+}
 function onYouTubeIframeAPIReady() {
   player = new YT.Player('player', {
     videoId: '${videoId}',
     width: '100%', height: '100%',
     playerVars: { controls: 0, disablekb: 1, fs: 0, rel: 0, playsinline: 1, iv_load_policy: 3,
-                  modestbranding: 1, cc_load_policy: 0, start: ${start}, origin: ${JSON.stringify(origin)},
+                  modestbranding: 1, cc_load_policy: 1, start: ${start}, origin: ${JSON.stringify(origin)},
                   // Read by the native WebView's script inside YouTube's iframe.
                   avp_hide_branding: ${hideBranding ? 1 : 0} },
     events: {
       onReady: function () {
         ready = true;
         send({ type: 'ready', duration: player.getDuration() });
+        postCaptions();
         // Started here, not by a command from the app: commands can't arrive while the app is
         // paused (e.g. a video switched to inside picture in picture).
         if (${autoPlay ? 'true' : 'false'}) player.playVideo();
       },
       onStateChange: function (e) { updateCover(e.data); send({ type: 'state', state: e.data }); },
+      // YouTube loads its captions module once a video with captions starts; that's when we
+      // learn whether there are captions, and whether they're showing.
+      onApiChange: reportCaptions,
       onError: function (e) { send({ type: 'error', code: e.data }); }
     }
   });

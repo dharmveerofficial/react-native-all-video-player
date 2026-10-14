@@ -14,6 +14,8 @@ export interface EngineHandle {
   setMuted(muted: boolean): void;
   /** iOS video files only; a no-op elsewhere. */
   startPictureInPicture(): void;
+  /** Show or hide the video's captions (when it has any; see onCaptions). */
+  setCaptions(on: boolean): void;
 }
 
 export interface EngineProps {
@@ -23,13 +25,17 @@ export interface EngineProps {
   onState(state: PlayerState): void;
   onTime(currentTime: number, duration: number): void;
   onError(error: PlayerError): void;
+  /** Whether the video has captions, and whether they're showing. */
+  onCaptions(available: boolean, on: boolean): void;
 }
 
 // YouTube refuses embeds without a referring https origin; any one works.
 const EMBED_ORIGIN = 'https://localhost';
 
 interface PageMessage {
-  type: 'ready' | 'state' | 'time' | 'error';
+  type: 'ready' | 'state' | 'time' | 'error' | 'captions';
+  available?: boolean;
+  on?: boolean;
   state?: number;
   current?: number;
   duration?: number;
@@ -44,18 +50,35 @@ type YouTubeEngineProps = EngineProps & {
   thumbnail?: string;
   /** Play as soon as it loads; read once, so changing it later doesn't reload the page. */
   autoPlay: boolean;
+  /** Whether captions start on; read once, like autoPlay (later changes go through setCaptions). */
+  captions: boolean;
 };
 
 export const YouTubeEngine = forwardRef<EngineHandle, YouTubeEngineProps>(
   function YouTubeEngine(
-    { videoId, hideBranding, thumbnailOnPause, thumbnail, autoPlay, startSeconds, style, onReady, onState, onTime, onError },
+    {
+      videoId,
+      hideBranding,
+      thumbnailOnPause,
+      thumbnail,
+      autoPlay,
+      captions,
+      startSeconds,
+      style,
+      onReady,
+      onState,
+      onTime,
+      onError,
+      onCaptions,
+    },
     ref,
   ) {
     const viewRef = useRef<React.ElementRef<typeof AVPWebView>>(null);
     const playOnLoad = useRef(autoPlay).current;
+    const captionsOnLoad = useRef(captions).current;
     const html = useMemo(
-      () => youtubeHtml({ videoId, origin: EMBED_ORIGIN, startSeconds, hideBranding, thumbnailOnPause, thumbnail, autoPlay: playOnLoad }),
-      [videoId, startSeconds, hideBranding, thumbnailOnPause, thumbnail, playOnLoad],
+      () => youtubeHtml({ videoId, origin: EMBED_ORIGIN, startSeconds, hideBranding, thumbnailOnPause, thumbnail, autoPlay: playOnLoad, captions: captionsOnLoad }),
+      [videoId, startSeconds, hideBranding, thumbnailOnPause, thumbnail, playOnLoad, captionsOnLoad],
     );
 
     const run = useCallback((script: string) => {
@@ -71,6 +94,16 @@ export const YouTubeEngine = forwardRef<EngineHandle, YouTubeEngineProps>(
         setRate: rate => run(`player.setPlaybackRate(${Number(rate) || 1});`),
         setMuted: muted => run(muted ? 'player.mute();' : 'player.unMute();'),
         startPictureInPicture: () => {},
+        // The choice is stored even before YouTube is ready; the page applies it once captions load.
+        setCaptions: on => {
+          const value = on ? 'true' : 'false';
+          if (viewRef.current) {
+            WebViewCommands.injectJavaScript(
+              viewRef.current,
+              `captionsWanted = ${value}; postCaptions(); if (player && ready) { reportCaptions(); }`,
+            );
+          }
+        },
       }),
       [run],
     );
@@ -91,6 +124,9 @@ export const YouTubeEngine = forwardRef<EngineHandle, YouTubeEngineProps>(
           break;
         case 'time':
           onTime(message.current ?? 0, message.duration ?? 0);
+          break;
+        case 'captions':
+          onCaptions(!!message.available, !!message.on);
           break;
         case 'error':
           onError({
@@ -141,6 +177,7 @@ export const NativeVideoEngine = forwardRef<EngineHandle, NativeVideoEngineProps
     onState,
     onTime,
     onError,
+    onCaptions,
     onPoster,
     onPictureInPicturePossible,
     onPictureInPicture,
@@ -161,6 +198,7 @@ export const NativeVideoEngine = forwardRef<EngineHandle, NativeVideoEngineProps
       setRate: rate => call(view => VideoCommands.setRate(view, Number(rate) || 1)),
       setMuted: muted => call(view => VideoCommands.setMuted(view, muted)),
       startPictureInPicture: () => call(view => VideoCommands.startPictureInPicture(view)),
+      setCaptions: on => call(view => VideoCommands.setCaptions(view, on)),
     }),
     [call],
   );
@@ -181,6 +219,7 @@ export const NativeVideoEngine = forwardRef<EngineHandle, NativeVideoEngineProps
       onVideoProgress={e => onTime(e.nativeEvent.currentTime, e.nativeEvent.duration)}
       onVideoError={e => onError({ message: e.nativeEvent.message || 'The video could not be played' })}
       onVideoPoster={e => onPoster(e.nativeEvent.uri)}
+      onVideoCaptions={e => onCaptions(e.nativeEvent.available, e.nativeEvent.on)}
       onVideoPictureInPicturePossible={e => onPictureInPicturePossible(e.nativeEvent.possible)}
       onVideoPictureInPicture={e => onPictureInPicture(e.nativeEvent.active)}
     />

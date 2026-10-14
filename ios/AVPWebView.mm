@@ -81,6 +81,18 @@ static NSString *const kBridgeName = @"AVPBridge";
        "  };"
        "  add();"
        "  document.addEventListener('DOMContentLoaded', add);"
+       "  window.addEventListener('message', function (e) {"
+       "    if (!e.data || typeof e.data.avpCaptions !== 'boolean') return;"
+       "    var hide = document.getElementById('avp-hide-captions');"
+       "    if (!e.data.avpCaptions && !hide) {"
+       "      hide = document.createElement('style');"
+       "      hide.id = 'avp-hide-captions';"
+       "      hide.textContent = '.ytp-caption-window-container,.caption-window{display:none!important}';"
+       "      (document.head || document.documentElement).appendChild(hide);"
+       "    } else if (e.data.avpCaptions && hide) {"
+       "      hide.remove();"
+       "    }"
+       "  });"
        "})();";
   [config.userContentController
       addUserScript:[[WKUserScript alloc] initWithSource:hideYouTubeUI

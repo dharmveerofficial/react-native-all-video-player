@@ -25,6 +25,8 @@ export interface NativeProps extends ViewProps {
   autoEnterPictureInPicture?: CodegenTypes.WithDefault<boolean, false>;
   /** iOS: whether picture in picture can start right now. */
   onVideoPictureInPicturePossible?: CodegenTypes.DirectEventHandler<Readonly<{ possible: boolean }>>;
+  /** Whether the video has a text (subtitle) track, and whether one is showing. */
+  onVideoCaptions?: CodegenTypes.DirectEventHandler<Readonly<{ available: boolean; on: boolean }>>;
   /** iOS: picture in picture started or stopped. */
   onVideoPictureInPicture?: CodegenTypes.DirectEventHandler<Readonly<{ active: boolean }>>;
 }
@@ -36,10 +38,11 @@ interface NativeCommands {
   setRate: (viewRef: React.ElementRef<HostComponent<NativeProps>>, rate: CodegenTypes.Float) => void;
   setMuted: (viewRef: React.ElementRef<HostComponent<NativeProps>>, muted: boolean) => void;
   startPictureInPicture: (viewRef: React.ElementRef<HostComponent<NativeProps>>) => void;
+  setCaptions: (viewRef: React.ElementRef<HostComponent<NativeProps>>, on: boolean) => void;
 }
 
 export const Commands = codegenNativeCommands<NativeCommands>({
-  supportedCommands: ['play', 'pause', 'seekTo', 'setRate', 'setMuted', 'startPictureInPicture'],
+  supportedCommands: ['play', 'pause', 'seekTo', 'setRate', 'setMuted', 'startPictureInPicture', 'setCaptions'],
 });
 
 export default codegenNativeComponent<NativeProps>('AVPVideoView') as HostComponent<NativeProps>;

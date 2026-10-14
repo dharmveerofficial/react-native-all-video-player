@@ -345,6 +345,13 @@ static void *kTimeControlContext = &kTimeControlContext;
       _ready = YES;
       [self emitReady];
       [self updateState];
+      // Captions are on by default when the video has them.
+      AVMediaSelectionGroup *captions = [self captionGroup];
+      if (captions.options.count > 0 &&
+          [item.currentMediaSelection selectedMediaOptionInMediaSelectionGroup:captions] == nil) {
+        [item selectMediaOption:captions.options.firstObject inMediaSelectionGroup:captions];
+      }
+      [self emitCaptions];
     } else if (item.status == AVPlayerItemStatusFailed) {
       [self emitError:item.error];
     }
@@ -408,6 +415,31 @@ static void *kTimeControlContext = &kTimeControlContext;
 - (void)setMuted:(BOOL)muted
 {
   _player.muted = muted;
+}
+
+// Subtitles and closed captions: the asset's "legible" media selection group.
+- (AVMediaSelectionGroup *)captionGroup
+{
+  AVAsset *asset = _player.currentItem.asset;
+  return asset ? [asset mediaSelectionGroupForMediaCharacteristic:AVMediaCharacteristicLegible] : nil;
+}
+
+- (void)emitCaptions
+{
+  if (!_eventEmitter) return;
+  AVMediaSelectionGroup *group = [self captionGroup];
+  BOOL available = group.options.count > 0;
+  BOOL on = available && [_player.currentItem.currentMediaSelection selectedMediaOptionInMediaSelectionGroup:group] != nil;
+  std::static_pointer_cast<const AVPVideoViewEventEmitter>(_eventEmitter)
+      ->onVideoCaptions(AVPVideoViewEventEmitter::OnVideoCaptions{.available = (bool)available, .on = (bool)on});
+}
+
+- (void)setCaptions:(BOOL)on
+{
+  AVMediaSelectionGroup *group = [self captionGroup];
+  if (group == nil) return;
+  [_player.currentItem selectMediaOption:(on ? group.options.firstObject : nil) inMediaSelectionGroup:group];
+  [self emitCaptions];
 }
 
 - (void)updateState

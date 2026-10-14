@@ -67,6 +67,7 @@ Give the player a size; 16:9 suits most videos. Pass `url` or `playlist`; TypeSc
 
 - Previous/next buttons appear beside play/pause; each is dimmed at the start or end of the list. Pressing one starts that video.
 - With "Autoplay next" on (the default), the next video starts when one ends, inline or in fullscreen.
+- The "Autoplay next" and "Captions" choices from the settings menu are kept for the rest of the app session, for every player.
 - A playlist with one video behaves like a plain `url`.
 
 ### Thumbnails

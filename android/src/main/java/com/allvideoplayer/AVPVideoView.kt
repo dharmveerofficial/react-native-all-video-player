@@ -11,6 +11,8 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.TrackSelectionOverride
+import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
@@ -76,6 +78,43 @@ class AVPVideoView(private val reactContext: ThemedReactContext) :
     override fun onPlayerError(error: PlaybackException) {
       emit(reactContext, EVENT_ERROR, Arguments.createMap().apply { putString("message", describe(error)) })
     }
+
+    override fun onTracksChanged(tracks: Tracks) = emitCaptions(tracks)
+  }
+
+  private var lastCaptions: Pair<Boolean, Boolean>? = null
+  // Captions are on by default; once the viewer flips them, their choice stands.
+  private var captionsChosen = false
+
+  private fun emitCaptions(tracks: Tracks) {
+    if (!captionsChosen && tracks.containsType(C.TRACK_TYPE_TEXT) && !tracks.isTypeSelected(C.TRACK_TYPE_TEXT)) {
+      captionsChosen = true
+      setCaptions(true)
+      return
+    }
+    val state = tracks.containsType(C.TRACK_TYPE_TEXT) to tracks.isTypeSelected(C.TRACK_TYPE_TEXT)
+    if (state == lastCaptions) return
+    lastCaptions = state
+    emit(reactContext, EVENT_CAPTIONS, Arguments.createMap().apply {
+      putBoolean("available", state.first)
+      putBoolean("on", state.second)
+    })
+  }
+
+  // On: the first text track (ExoPlayer only picks one by itself when its language matches the
+  // device's). Off: text tracks disabled.
+  fun setCaptions(on: Boolean) {
+    captionsChosen = true
+    val p = player ?: return
+    val builder = p.trackSelectionParameters.buildUpon()
+      .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+      .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, !on)
+    if (on) {
+      p.currentTracks.groups.firstOrNull { it.type == C.TRACK_TYPE_TEXT && it.isSupported }?.let {
+        builder.setOverrideForType(TrackSelectionOverride(it.mediaTrackGroup, 0))
+      }
+    }
+    p.trackSelectionParameters = builder.build()
   }
 
   init {
@@ -175,6 +214,8 @@ class AVPVideoView(private val reactContext: ThemedReactContext) :
     hasPlayed = false
     lastState = STATE_UNSTARTED
     posterFor = null
+    lastCaptions = null
+    captionsChosen = false
   }
 
   private fun updateState() {
@@ -223,6 +264,7 @@ class AVPVideoView(private val reactContext: ThemedReactContext) :
     const val EVENT_PROGRESS = "topVideoProgress"
     const val EVENT_ERROR = "topVideoError"
     const val EVENT_POSTER = "topVideoPoster"
+    const val EVENT_CAPTIONS = "topVideoCaptions"
 
     private const val POSTER_MAX_WIDTH = 1280
     // Tried in order; intros are often a blank slide or a fade from black.

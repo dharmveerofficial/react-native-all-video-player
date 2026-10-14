@@ -39,6 +39,8 @@ class AVPVideoViewManager : SimpleViewManager<AVPVideoView>(), AVPVideoViewManag
 
   override fun startPictureInPicture(view: AVPVideoView) = Unit
 
+  override fun setCaptions(view: AVPVideoView, on: Boolean) = view.setCaptions(on)
+
   override fun onDropViewInstance(view: AVPVideoView) {
     super.onDropViewInstance(view)
     view.destroy()
@@ -50,6 +52,7 @@ class AVPVideoViewManager : SimpleViewManager<AVPVideoView>(), AVPVideoViewManag
     AVPVideoView.EVENT_PROGRESS to mapOf("registrationName" to "onVideoProgress"),
     AVPVideoView.EVENT_ERROR to mapOf("registrationName" to "onVideoError"),
     AVPVideoView.EVENT_POSTER to mapOf("registrationName" to "onVideoPoster"),
+    AVPVideoView.EVENT_CAPTIONS to mapOf("registrationName" to "onVideoCaptions"),
   )
 
   companion object {
