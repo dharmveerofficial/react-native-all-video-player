@@ -12,11 +12,18 @@ class AllVideoPlayerPackage : BaseReactPackage() {
   override fun getModule(name: String, reactContext: ReactApplicationContext): NativeModule? = when (name) {
     AVPOrientationModule.NAME -> AVPOrientationModule(reactContext)
     AVPPictureInPictureModule.NAME -> AVPPictureInPictureModule(reactContext)
+    AVPMiniPlayerModule.NAME -> AVPMiniPlayerModule(reactContext)
+    AVPMediaSessionModule.NAME -> AVPMediaSessionModule(reactContext)
     else -> null
   }
 
   override fun getReactModuleInfoProvider() = ReactModuleInfoProvider {
-    listOf(AVPOrientationModule.NAME, AVPPictureInPictureModule.NAME).associateWith { name ->
+    listOf(
+      AVPOrientationModule.NAME,
+      AVPPictureInPictureModule.NAME,
+      AVPMiniPlayerModule.NAME,
+      AVPMediaSessionModule.NAME,
+    ).associateWith { name ->
       ReactModuleInfo(
         name = name,
         className = name,

@@ -1,4 +1,14 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import {
+  forwardRef,
+  useCallback,
+  useContext,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import {
   ActivityIndicator,
   DeviceEventEmitter,
@@ -22,11 +32,16 @@ import {
 import { formatTime } from '../formatTime';
 import { resolveSource } from '../source';
 import { PlayerSettingsProvider, usePlayerSettings } from '../settingsContext';
+import { InsideMiniPlayer, miniPlayer, type MiniRect } from '../miniPlayerStore';
+import { mediaSession, type MediaControls } from '../mediaSession';
+import { useScreenNavigation } from '../screenNavigation';
+import { PlaylistPanel } from './PlaylistPanel';
 import NativeAVPPictureInPicture from '../specs/NativeAVPPictureInPicture';
 import { INITIAL_COVER, nextCover } from '../thumbnailCover';
 import {
   PlayerState,
   type PlayerError,
+  type PlaylistItem,
   type VideoPlayerOptions,
   type VideoPlayerProps,
   type VideoPlayerRef,
@@ -37,6 +52,7 @@ import { BackIcon, FullscreenIcon, PauseIcon, PlayIcon, ReplayIcon, SettingsIcon
 
 const DEFAULT_RATES = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
 const CONTROLS_HIDE_DELAY_MS = 3000;
+const DEFAULT_ACCENT = '#EF4444';
 const RATE_OPTION_HEIGHT = 36;
 const DOUBLE_TAP_MS = 280;
 // Double-tap seeks only within the middle band of the height (taps above or below just
@@ -141,7 +157,23 @@ type SurfaceProps = Omit<
   onEnterPictureInPicture?: () => void;
   /** In the picture-in-picture window: no loading spinner (too small to help, and its redraws lag there). */
   inPictureInPicture?: boolean;
+  /** Swiping down on the video calls this (into the mini player, or out of fullscreen). */
+  onSwipeDown?: () => void;
+  /** Swiping up on the video calls this (into fullscreen). */
+  onSwipeUp?: () => void;
 };
+
+// With the playlist listed below, the player takes the space it's given: the video (sized by
+// `style`) on top, the list filling the rest. Without it, nothing wraps the video.
+function WithPanel({ panel, children }: { panel: ReactNode; children: ReactNode }) {
+  if (!panel) return <>{children}</>;
+  return (
+    <View style={styles.withPanel}>
+      {children}
+      {panel}
+    </View>
+  );
+}
 
 const PlayerSurface = forwardRef<VideoPlayerRef, SurfaceProps>(function PlayerSurface(
   {
@@ -155,7 +187,7 @@ const PlayerSurface = forwardRef<VideoPlayerRef, SurfaceProps>(function PlayerSu
     playbackRates = DEFAULT_RATES,
     seekStepSeconds = 10,
     doubleTapToSeek = true,
-    accentColor = '#EF4444',
+    accentColor = DEFAULT_ACCENT,
     fullscreen,
     onToggleFullscreen,
     style,
@@ -175,10 +207,47 @@ const PlayerSurface = forwardRef<VideoPlayerRef, SurfaceProps>(function PlayerSu
     onPictureInPictureChange,
     onEnterPictureInPicture,
     inPictureInPicture = false,
+    onSwipeDown,
+    onSwipeUp,
   },
   ref,
 ) {
   const resolved = useMemo(() => resolveSource(url ?? ''), [url]);
+  // Swipe down / up: the video follows the finger, then hands off once dragged far enough. Read
+  // from raw touch events rather than by claiming the gesture, since native gesture systems above
+  // (e.g. react-native-gesture-handler's root view) can cancel a claimed touch mid-swipe. Only
+  // clearly vertical drags count (the seek bar drags sideways), and not while the settings menu
+  // (which scrolls) is open.
+  const swipeDrag = useRef(new Animated.Value(0)).current;
+  const swipe = useRef({ onSwipeDown, onSwipeUp, enabled: false });
+  const swipeTouch = useRef<{ x: number; y: number; t: number; dx: number; dy: number } | null>(null);
+  const onSwipeTouchStart = (e: GestureResponderEvent) => {
+    if (!swipe.current.enabled || e.nativeEvent.touches.length > 1) {
+      swipeTouch.current = null;
+      return;
+    }
+    swipeTouch.current = { x: e.nativeEvent.pageX, y: e.nativeEvent.pageY, t: Date.now(), dx: 0, dy: 0 };
+  };
+  const onSwipeTouchMove = (e: GestureResponderEvent) => {
+    const touch = swipeTouch.current;
+    if (!touch) return;
+    touch.dx = e.nativeEvent.pageX - touch.x;
+    touch.dy = e.nativeEvent.pageY - touch.y;
+    if (Math.abs(touch.dy) <= 14 || Math.abs(touch.dy) <= Math.abs(touch.dx) * 1.5) return;
+    if (touch.dy > 0 && swipe.current.onSwipeDown) swipeDrag.setValue(touch.dy * 0.6);
+    else if (touch.dy < 0 && swipe.current.onSwipeUp) swipeDrag.setValue(touch.dy * 0.3);
+  };
+  const onSwipeTouchEnd = () => {
+    const touch = swipeTouch.current;
+    swipeTouch.current = null;
+    Animated.spring(swipeDrag, { toValue: 0, useNativeDriver: false }).start();
+    if (!touch || Math.abs(touch.dy) <= Math.abs(touch.dx) * 1.5) return;
+    const distance = Math.abs(touch.dy);
+    const speed = distance / Math.max(1, Date.now() - touch.t);
+    if (distance <= 70 && !(distance > 30 && speed > 0.8)) return;
+    if (touch.dy > 0) swipe.current.onSwipeDown?.();
+    else swipe.current.onSwipeUp?.();
+  };
   const engineRef = useRef<EngineHandle>(null);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const timeRef = useRef({ current: 0, duration: 0 });
@@ -420,6 +489,26 @@ const PlayerSurface = forwardRef<VideoPlayerRef, SurfaceProps>(function PlayerSu
     revealControls();
   };
 
+  // Headphone / earphone / Bluetooth buttons (and the iOS lock screen) control this player while
+  // it's the one playing: the media session follows the last player that started.
+  const [mediaId] = useState(() => mediaSession.newId());
+  const buildMediaControls = (): MediaControls => ({
+    play: () => engineRef.current?.play(),
+    pause: () => engineRef.current?.pause(),
+    seekTo,
+    next: playlistNav?.onNext,
+    previous: playlistNav?.onPrevious,
+  });
+  const mediaControls = useRef(buildMediaControls);
+  mediaControls.current = buildMediaControls;
+  const hasNextTrack = !!playlistNav?.onNext;
+  const hasPreviousTrack = !!playlistNav?.onPrevious;
+  useEffect(() => {
+    if (!ready) return;
+    mediaSession.update(mediaId, { playing, position: timeRef.current.current, duration }, () => mediaControls.current());
+  }, [mediaId, ready, playing, duration, hasNextTrack, hasPreviousTrack]);
+  useEffect(() => () => mediaSession.release(mediaId), [mediaId]);
+
   // Controls stay up while the settings menu is open; the hide timer restarts once it closes.
   const openSettings = () => {
     clearHideTimer();
@@ -453,8 +542,25 @@ const PlayerSurface = forwardRef<VideoPlayerRef, SurfaceProps>(function PlayerSu
     return <View style={[styles.container, style]} />;
   }
 
+  const swipes = !!onSwipeDown || !!onSwipeUp;
+  swipe.current = { onSwipeDown, onSwipeUp, enabled: swipes && settingsView === null };
+
   return (
-    <View style={[styles.container, style]}>
+    <Animated.View
+      style={[
+        styles.container,
+        style,
+        // Always present (it rests at 0): dropping an animated transform while it runs crashes Fabric.
+        {
+          transform: [{ translateY: swipeDrag }],
+          opacity: swipeDrag.interpolate({ inputRange: [0, 160], outputRange: [1, 0.6], extrapolate: 'clamp' }),
+        },
+      ]}
+      onTouchStart={swipes ? onSwipeTouchStart : undefined}
+      onTouchMove={swipes ? onSwipeTouchMove : undefined}
+      onTouchEnd={swipes ? onSwipeTouchEnd : undefined}
+      onTouchCancel={swipes ? onSwipeTouchEnd : undefined}
+    >
       {resolved.kind === 'youtube' ? (
         <YouTubeEngine
           key={resolved.videoId}
@@ -730,7 +836,7 @@ const PlayerSurface = forwardRef<VideoPlayerRef, SurfaceProps>(function PlayerSu
           <SideSeekFeedback ref={forwardFeedback} forward edge={zoneEdge} halfWidth={surfaceSize.width / 2} />
         </>
       )}
-    </View>
+    </Animated.View>
   );
 });
 
@@ -738,8 +844,8 @@ const PlayerSurface = forwardRef<VideoPlayerRef, SurfaceProps>(function PlayerSu
  * Fullscreen opens a second player in a Modal that resumes where the inline one
  * was; the inline player waits paused underneath and takes over again on exit.
  */
-export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(function VideoPlayer(
-  {
+export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(function VideoPlayer(props, ref) {
+  const {
     url,
     autoPlay = false,
     onFullscreenChange,
@@ -754,9 +860,9 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(function
     allowPictureInPicture = true,
     onPictureInPictureChange,
     ...surfaceProps
-  },
-  ref,
-) {
+  } = props;
+  // On a React Navigation screen: minimizing closes it, and the mini player reopens it.
+  const screen = useScreenNavigation();
   const [fullscreen, setFullscreenState] = useState(false);
   const windowSize = useWindowDimensions();
   // Android picture in picture shrinks the whole app, so the player shows full-size in the
@@ -769,10 +875,28 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(function
   );
   const [playing, setPlaying] = useState(false);
   // Playlist position and the "Autoplay next" switch, shared by the inline and fullscreen players.
-  const urls = useMemo(() => (playlist?.length ? playlist : [url ?? '']), [playlist, url]);
+  const urls = useMemo(
+    () => (playlist?.length ? playlist.map(item => (typeof item === 'string' ? item : item.url)) : [url ?? '']),
+    [playlist, url],
+  );
+  // Items with titles are also listed under the player.
+  const items = useMemo(
+    () => (playlist?.length && typeof playlist[0] !== 'string' ? (playlist as PlaylistItem[]) : null),
+    [playlist],
+  );
   const playlistKey = urls.join('\n');
   const firstIndex = Math.min(Math.max(0, Math.floor(playlistStartIndex) || 0), urls.length - 1);
-  const [index, setIndex] = useState(firstIndex);
+  // A player shown with the video the mini player has while its own screen is gone (e.g. that
+  // screen reopened from the mini player) takes the video over from it, from where it got to.
+  const insideMini = useContext(InsideMiniPlayer);
+  const miniAvailable = useMemo(() => !insideMini && miniPlayer.supported(), [insideMini]);
+  const [adopted] = useState(() => {
+    if (!miniAvailable || !miniPlayer.active() || miniPlayer.hasOrigin() || !miniPlayer.showsSameMedia(props)) return null;
+    const id = miniPlayer.getSession()?.id;
+    return id === undefined ? null : { id, live: miniPlayer.getLiveState() };
+  });
+  const adoptId = adopted?.id ?? null;
+  const [index, setIndex] = useState(() => Math.min(adopted?.live?.index ?? firstIndex, urls.length - 1));
   // The settings menu's "Captions" and "Autoplay next" choices, kept in the internal settings
   // context for the app session: shared by every video, fullscreen and later players. On by default.
   const [{ captionsOn, autoPlayNext: autoNext }, setSettings] = usePlayerSettings();
@@ -780,7 +904,13 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(function
   const setAutoNext = (on: boolean) => setSettings({ autoPlayNext: on });
   // After moving on by itself, the next video starts playing without a tap.
   const [advanced, setAdvanced] = useState(false);
+  const firstRun = useRef(true);
   useEffect(() => {
+    // On mount the index is already right (and may be the mini player's, when taking over).
+    if (firstRun.current) {
+      firstRun.current = false;
+      return;
+    }
     setIndex(firstIndex);
     setAdvanced(false);
   }, [playlistKey, firstIndex]);
@@ -792,13 +922,111 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(function
   const modalState = useRef<PlayerState>(PlayerState.Unstarted);
   const [resume, setResume] = useState({ seconds: 0, playing: false });
 
+  // Mini player (a native overlay over the app): swiping down hands playback to it; tapping it,
+  // or the placeholder left here, hands it back at the position (and playlist video) it reached.
+  const [miniId, setMiniId] = useState<number | null>(adoptId);
+  const [inlineStart, setInlineStart] = useState<number | null>(adopted?.live?.seconds ?? null);
+  const liveRef = useRef({ index, miniId });
+  liveRef.current = { index, miniId };
+  // The inline player's box, measured for the animation into and out of the mini player.
+  const boxRef = useRef<View>(null);
+  const measureBox = () =>
+    new Promise<MiniRect | null>(resolve => {
+      const box = boxRef.current;
+      if (!box) return resolve(null);
+      box.measureInWindow((x, y, width, height) => resolve(width > 0 && height > 0 ? { x, y, width, height } : null));
+    });
+  // How the mini player hands the video back to this player.
+  const miniOrigin = () => ({
+    returnTo: (atSeconds: number, resumePlaying: boolean, atIndex: number) => {
+      setMiniId(null);
+      if (atIndex !== liveRef.current.index) {
+        setIndex(atIndex);
+        setInlineStart(atSeconds);
+        setAdvanced(resumePlaying);
+        onVideoChange?.(atIndex, urls[atIndex]);
+      } else if (inlineState.current === PlayerState.Unstarted) {
+        // Not loaded yet (a reopened screen, or a video the mini player moved on to): it loads
+        // at the position it's given; play then.
+        setInlineStart(atSeconds);
+        setAdvanced(resumePlaying);
+      } else {
+        inlineRef.current?.seekTo(atSeconds);
+        if (resumePlaying) inlineRef.current?.play();
+      }
+    },
+    onClosed: () => setMiniId(null),
+    measure: measureBox,
+    // The listed playlist highlights what the mini player is playing.
+    onIndex: (atIndex: number) => {
+      setIndex(atIndex);
+      setInlineStart(0);
+      setAdvanced(false);
+    },
+  });
+  useEffect(() => {
+    if (adoptId === null) return;
+    if (index !== firstIndex) onVideoChange?.(index, urls[index]);
+    miniPlayer.adopt(adoptId, miniOrigin());
+    // Once, on mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const minimizing = useRef(false);
+  const minimize = async () => {
+    if (!miniAvailable || miniId !== null || minimizing.current) return;
+    minimizing.current = true;
+    const seconds = inlineRef.current?.getCurrentTime() ?? 0;
+    const wasPlaying = inlineState.current === PlayerState.Playing || playing;
+    inlineRef.current?.pause();
+    const rect = await measureBox();
+    minimizing.current = false;
+    const id = miniPlayer.open(
+      {
+        ...props,
+        playlistStartIndex: index,
+        startSeconds: seconds,
+        autoPlay: wasPlaying,
+      },
+      miniOrigin(),
+      rect,
+      screen?.reopen,
+    );
+    if (id === null) {
+      if (wasPlaying) inlineRef.current?.play();
+      return;
+    }
+    setMiniId(id);
+    // Recorded now: closing the screen may unmount this player before the next render.
+    liveRef.current.miniId = id;
+    // With the playlist listed, the screen stays (showing just the playlist) instead of closing.
+    if (!items) screen?.close();
+  };
+  useEffect(
+    () => () => {
+      if (liveRef.current.miniId !== null) miniPlayer.detach(liveRef.current.miniId);
+    },
+    [],
+  );
+
   // Switches to another playlist video and starts it playing.
   const goTo = (next: number) => {
+    setInlineStart(null);
     setIndex(next);
     setAdvanced(true);
     // A fullscreen player switching videos starts the new one from the top.
     setResume({ seconds: 0, playing: true });
     onVideoChange?.(next, urls[next]);
+  };
+
+  // A row of the listed playlist: plays that video here, taking it back from the mini player.
+  const selectFromPanel = (next: number) => {
+    if (next === index) {
+      // The playing one: bring it back from the mini player where it got to.
+      if (miniId !== null) miniPlayer.expand(miniId);
+      return;
+    }
+    if (miniId !== null) miniPlayer.close();
+    goTo(next);
   };
 
   const handleEnd = () => {
@@ -952,22 +1180,37 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(function
     onEnterPictureInPicture: androidPip ? enterAndroidPip : undefined,
   };
 
+  const panel =
+    items && !insideMini ? (
+      <PlaylistPanel items={items} current={index} onSelect={selectFromPanel} accentColor={surfaceProps.accentColor ?? DEFAULT_ACCENT} />
+    ) : null;
+  // While the mini player has the video, the listed playlist takes the whole space (the video
+  // area folds away, still mounted so it keeps its player).
+  const folded = !!panel && miniId !== null;
   return (
     <PlayerSettingsProvider>
       {modalOpen && <StatusBar hidden animated />}
+      <WithPanel panel={panel}>
+      <View style={[style, folded && styles.folded]} ref={boxRef} collapsable={false}>
       <PlayerSurface
         {...surfaceProps}
         {...autoNextProps}
         {...pipProps}
         url={current}
-        // Stays quiet under the fullscreen player; that one plays the next video.
-        autoPlay={!modalOpen && (autoPlay || advanced)}
+        startSeconds={inlineStart ?? surfaceProps.startSeconds}
+        // Stays quiet under the fullscreen player (that one plays the next video) and while the
+        // mini player has it.
+        autoPlay={!modalOpen && miniId === null && (autoPlay || advanced)}
         ref={inlineRef}
-        style={style}
+        style={StyleSheet.absoluteFill}
+        onSwipeDown={modalOpen ? undefined : miniAvailable ? (miniId === null ? minimize : undefined) : insideMini?.onSwipeDown}
+        onSwipeUp={toggleFullscreen && !modalOpen && miniId === null ? () => setFullscreen(true) : undefined}
         fullscreen={false}
         onToggleFullscreen={toggleFullscreen}
         onStateChange={next => {
           inlineState.current = next;
+          // Another video starting closes the mini player, as on YouTube.
+          if (next === PlayerState.Playing && !insideMini && miniId === null && miniPlayer.active()) miniPlayer.close();
           if (modalOpen) return;
           setPlaying(next === PlayerState.Playing);
           onStateChange?.(next);
@@ -975,6 +1218,18 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(function
         onProgress={event => !modalOpen && onProgress?.(event)}
         onEnd={() => !modalOpen && handleEnd()}
       />
+      {miniId !== null && (
+        <Pressable
+          style={styles.miniPlaceholder}
+          onPress={() => miniPlayer.expand(miniId)}
+          accessibilityRole="button"
+          accessibilityLabel="Bring the video back from the mini player"
+        >
+          <Text style={styles.miniPlaceholderTitle}>Playing in mini player</Text>
+          <Text style={styles.miniPlaceholderHint}>Tap to bring it back</Text>
+        </Pressable>
+      )}
+      </View>
       {modalOpen && (
         <Modal
           visible
@@ -991,6 +1246,7 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(function
             ref={modalRef}
             showControls={pip ? false : surfaceProps.showControls}
             inPictureInPicture={pip}
+            onSwipeDown={pip ? undefined : () => setFullscreen(false)}
             // The Modal stays screen-sized in picture in picture; the window shows its top-left.
             style={pip ? { position: 'absolute', left: 0, top: 0, width: windowSize.width, height: windowSize.height } : StyleSheet.absoluteFill}
             startSeconds={resume.seconds}
@@ -1000,6 +1256,7 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(function
             onReady={undefined}
             onStateChange={next => {
               modalState.current = next;
+              if (next === PlayerState.Playing && !insideMini && miniId === null && miniPlayer.active()) miniPlayer.close();
               setPlaying(next === PlayerState.Playing);
               onStateChange?.(next);
             }}
@@ -1008,12 +1265,23 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(function
           />
         </Modal>
       )}
+      </WithPanel>
     </PlayerSettingsProvider>
   );
 });
 
 const styles = StyleSheet.create({
   container: { backgroundColor: BLACK, overflow: 'hidden' },
+  withPanel: { flex: 1 },
+  folded: { maxHeight: 0, overflow: 'hidden' },
+  miniPlaceholder: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: BLACK,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  miniPlaceholderTitle: { color: WHITE, fontSize: 15, fontWeight: '700' },
+  miniPlaceholderHint: { color: 'rgba(255,255,255,0.7)', fontSize: 13, marginTop: 4 },
   thumbnail: { ...StyleSheet.absoluteFill, backgroundColor: BLACK },
   centerOverlay: {
     ...StyleSheet.absoluteFill,

@@ -171,3 +171,25 @@ export function SettingsIcon({ size, color }: IconProps) {
 const styles = StyleSheet.create({
   row:{ flexDirection: 'row', alignItems: 'center' },
 });
+
+// A chevron pointing up (expand) or down (collapse): a square showing two borders, turned 45°.
+export function ChevronIcon({ size, color, up }: IconProps & { up: boolean }) {
+  const thickness = Math.max(2, size * 0.12);
+  const side = size * 0.5;
+  return (
+    <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
+      <View
+        style={{
+          width: side,
+          height: side,
+          marginTop: up ? side * 0.45 : -side * 0.45,
+          borderLeftWidth: thickness,
+          borderTopWidth: up ? thickness : 0,
+          borderBottomWidth: up ? 0 : thickness,
+          borderColor: color,
+          transform: [{ rotate: up ? '45deg' : '-45deg' }],
+        }}
+      />
+    </View>
+  );
+}

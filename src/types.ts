@@ -23,6 +23,16 @@ export interface ProgressEvent {
   duration: number;
 }
 
+/** A playlist video with what to show for it in the playlist under the player. */
+export interface PlaylistItem {
+  /** A YouTube link or id, or the http(s) URL of a video file or stream. */
+  url: string;
+  title: string;
+  subTitle?: string;
+  /** Image for its row; YouTube videos get their own thumbnail without it. */
+  thumbnail?: string;
+}
+
 /** What to play: a single url, or a playlist (then url isn't needed). */
 // The url variant comes last so leaving both out reports "Property 'url' is missing".
 export type VideoSource =
@@ -31,13 +41,14 @@ export type VideoSource =
       /**
        * Videos to play in order; YouTube links and video files can be mixed. Used instead of
        * url: the player adds previous/next buttons and an "Autoplay next" switch in settings.
+       * Pass items with titles to also list the playlist under the player, as on YouTube.
        */
-      playlist: string[];
+      playlist: string[] | PlaylistItem[];
     }
   | {
       /** A YouTube link or id, or the http(s) URL of a video file or stream (mp4, m3u8, mpd, webm, mov, ...). */
       url: string;
-      playlist?: string[];
+      playlist?: string[] | PlaylistItem[];
     };
 
 /** Pass url, or playlist; leaving both out is a type error. */

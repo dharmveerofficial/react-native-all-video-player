@@ -11,12 +11,14 @@ One video player for React Native. Pass **any video URL**: YouTube links, mp4/mo
 ## Features
 
 - **Any source:** YouTube and video files or streams, through one component. Video files and streams play natively: ExoPlayer (Media3) on Android, AVPlayer on iOS.
-- **Custom controls:** play/pause, double-tap left/right to seek, draggable seek bar and time.
+- **Custom controls:** play/pause, double-tap left/right to seek, draggable seek bar and time. Swipe up for fullscreen and down to leave it.
 - **Settings menu:** playback speed (0.25x to 2x) and, for playlists, an "Autoplay next" switch.
-- **Playlists:** pass `playlist` with any mix of YouTube links and video files to get previous/next buttons and autoplay of the next video.
+- **Playlists:** pass `playlist` with any mix of YouTube links and video files to get previous/next buttons and autoplay of the next video. Give the items titles to list them under the player, as on YouTube.
 - **Thumbnails:** your own image, or a frame grabbed from the video, shown before the first play and at the end (and optionally while paused).
 - **Built-in fullscreen:** rotates to landscape, hides the status bar, handles Android's back button, and restores everything on exit.
 - **Picture in picture:** supported too.
+- **Mini player:** swipe down on a video to shrink it into a floating player that stays over every screen while the viewer browses.
+- **Headphone controls:** wired, Bluetooth and AirPods buttons play/pause and skip, and unplugging pauses. On iOS the lock screen and Control Center work too.
 - **One install:** nothing else to add, no AppDelegate/MainActivity changes.
 
 ## Installation
@@ -70,6 +72,35 @@ Give the player a size; 16:9 suits most videos. Pass `url` or `playlist`; TypeSc
 - The "Autoplay next" and "Captions" choices from the settings menu are kept for the rest of the app session, for every player.
 - A playlist with one video behaves like a plain `url`.
 
+#### With titles: the playlist under the player
+
+Pass items instead of urls to list the playlist under the video, as on YouTube: each row shows a thumbnail (YouTube videos get theirs automatically), the title and the subtitle; the playing one is highlighted, and tapping a row plays it.
+
+```tsx
+<View style={{ flex: 1 }}>
+  <VideoPlayer
+    playlist={[
+      { url: 'https://youtu.be/dQw4w9WgXcQ', title: 'Introduction', subTitle: 'Lesson 1 · 3 min' },
+      { url: 'https://cdn.example.com/lessons/part-2.mp4', title: 'Setting up', subTitle: 'Lesson 2', thumbnail: 'https://cdn.example.com/lessons/part-2.jpg' },
+    ]}
+    style={{ width: '100%', aspectRatio: 16 / 9 }}
+  />
+</View>
+```
+
+The player then fills the space it's given: the video, sized by `style`, on top and the list below it, so put it in a container that has room (e.g. `flex: 1`). The list follows the system light/dark appearance and uses `accentColor` for the playing row.
+
+### Mini player
+
+Swiping down on a player shrinks it into a mini player that floats over every screen, continuing from the same moment (playlists included), with no setup. It works like YouTube's:
+
+- Drag it anywhere; it snaps to the nearer side. Fling it off a side to close it.
+- Pinch to resize it.
+- Its buttons play/pause and close it. Tapping anywhere else hands the video back to its original player, reopening its screen if that has closed (see below). Without a way to reopen it, the mini player grows into a full-window player (swipe down or press back to shrink it again).
+- Starting another video closes the mini player.
+
+With React Navigation, the player's screen closes when its video moves into the mini player, and tapping the mini player reopens it; the player there carries on from the same moment. Nothing to set up.
+
 ### Thumbnails
 
 ```tsx
@@ -116,7 +147,7 @@ See [`example/App.tsx`](example/App.tsx) for a runnable screen.
 | Prop | Type | Default | |
 |---|---|---|---|
 | `url` | `string` | — | Any video URL, or a YouTube id/link. Required unless `playlist` is given. |
-| `playlist` | `string[]` | — | Videos to play in order, YouTube and files mixed; used instead of `url`. Adds previous/next buttons and "Autoplay next" in settings. |
+| `playlist` | `string[]` or `{ url, title, subTitle?, thumbnail? }[]` | — | Videos to play in order, YouTube and files mixed; used instead of `url`. Adds previous/next buttons and "Autoplay next" in settings. Items with titles are also listed under the player. |
 | `playlistStartIndex` | `number` | `0` | Playlists: the video to start with. |
 | `onVideoChange` | `(index: number, url: string) => void` | — | Playlists: the player moved to another video (previous/next or autoplay). |
 | `autoPlay` | `boolean` | `false` | Play as soon as the player is ready. |
