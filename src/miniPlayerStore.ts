@@ -1,6 +1,7 @@
 import { createContext } from 'react';
 import { DeviceEventEmitter, Dimensions } from 'react-native';
 import NativeAVPMiniPlayer from './specs/NativeAVPMiniPlayer';
+import { playlistUrls } from './playlist';
 import type { VideoPlayerProps } from './types';
 
 export interface MiniRect {
@@ -43,15 +44,18 @@ const BOTTOM_OFFSET = 80;
 const HIDE_ANIMATION_MS = 300;
 // Lets a reopened screen finish its opening transition before the mini player animates into it.
 const ADOPT_DELAY_MS = 400;
+// How long after the mini player asks for its screen to reopen that a new player counts as it.
+const REOPEN_WINDOW_MS = 3000;
 
-const mediaKey = (props: VideoPlayerProps) =>
-  (props.playlist?.length ? props.playlist.map(item => (typeof item === 'string' ? item : item.url)) : [props.url ?? ''])
-    .join('\n');
+const mediaKey = (props: VideoPlayerProps) => playlistUrls(props).join('\n');
 
 let session: MiniSession | null = null;
 let origin: Origin | null = null;
 // Shrinking back into the original player (the session ends when that finishes).
 let leaving = false;
+// The mini player asked the app to reopen its original screen (see reopenOrigin).
+let reopening = false;
+let reopenTimer: ReturnType<typeof setTimeout> | null = null;
 let nextId = 1;
 let expandHandler: (() => void) | null = null;
 let liveStateGetter: (() => MiniLiveState) | null = null;
@@ -131,6 +135,7 @@ export const miniPlayer = {
   adopt(id: number, from: Origin): void {
     if (session?.id !== id) return;
     origin = from;
+    reopening = false;
     setTimeout(() => miniPlayer.expand(id), ADOPT_DELAY_MS);
   },
 
@@ -139,10 +144,33 @@ export const miniPlayer = {
     if (session?.id === id) origin?.onIndex?.(index);
   },
 
-  /** Whether `props` show the same video(s) as the current session. */
-  showsSameMedia(props: VideoPlayerProps): boolean {
-    if (!session) return false;
-    return mediaKey(session.props) === mediaKey(props);
+  /**
+   * Whether a newly shown player should take the video over from the mini player: it has the
+   * same video(s), and either starts on the one the mini player is showing, or is the original
+   * screen the mini player itself just reopened (which takes whichever video it has got to). A
+   * different video of the same playlist opened by the viewer plays as itself instead.
+   */
+  canAdopt(props: VideoPlayerProps, startIndex: number): boolean {
+    if (!session || leaving || origin?.returnTo) return false;
+    if (mediaKey(session.props) !== mediaKey(props)) return false;
+    if (reopening) return true;
+    const at = liveStateGetter?.().index ?? session.props.playlistStartIndex ?? 0;
+    return at === startIndex;
+  },
+
+  /** The original screen has closed: asks the app to reopen it, for its player to adopt this session. */
+  reopenOrigin(): boolean {
+    const reopen = session?.reopen;
+    if (!reopen) return false;
+    reopening = true;
+    if (reopenTimer) clearTimeout(reopenTimer);
+    // Only the screen that opens in response counts; a later one opened by the viewer doesn't.
+    reopenTimer = setTimeout(() => {
+      reopening = false;
+      reopenTimer = null;
+    }, REOPEN_WINDOW_MS);
+    reopen();
+    return true;
   },
 
   /** The original player went away (its screen closed); the mini player carries on alone. */
@@ -200,6 +228,7 @@ export const miniPlayer = {
   end(): void {
     session = null;
     leaving = false;
+    reopening = false;
     origin = null;
     NativeAVPMiniPlayer?.hide();
     emit();

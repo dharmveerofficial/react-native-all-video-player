@@ -138,6 +138,27 @@ const SideSeekFeedback = forwardRef<SideFeedbackHandle, { forward: boolean; edge
   },
 );
 
+const INVALID_URL_MESSAGE = 'Not a supported video link';
+
+// What the default error overlay says. Raw messages from the native players are technical, so
+// only the url problems (which this file words itself) are shown as-is.
+function errorMessage(error: PlayerError, hasUrl: boolean): string {
+  if (!hasUrl) return 'No video to play.';
+  switch (error.code) {
+    case 2:
+      return 'This video link isn\'t valid.';
+    // YouTube reports missing, private and embed-blocked videos with these codes interchangeably.
+    case 100:
+    case 101:
+    case 150:
+    case 152:
+    case 153:
+      return 'This video isn\'t available. It may be private, removed, or not allowed to play here.';
+  }
+  if (error.message === INVALID_URL_MESSAGE) return 'This link isn\'t a supported video link.';
+  return 'This video couldn\'t be played. Check your connection and try again.';
+}
+
 type SurfaceProps = Omit<
   VideoPlayerOptions,
   'onFullscreenChange' | 'allowFullscreen' | 'onVideoChange' | 'playlistStartIndex'
@@ -193,6 +214,7 @@ const PlayerSurface = forwardRef<VideoPlayerRef, SurfaceProps>(function PlayerSu
     style,
     renderLoading,
     renderBackButton,
+    renderError,
     onReady,
     onStateChange,
     onProgress,
@@ -290,7 +312,12 @@ const PlayerSurface = forwardRef<VideoPlayerRef, SurfaceProps>(function PlayerSu
   const ended = state === PlayerState.Ended && !advancing;
   const loading = (!ready || buffering) && !advancing;
 
-  useEffect(() => {
+  // Playback failed: shown over the player until Retry (or a new url) loads it again.
+  const [error, setError] = useState<PlayerError | null>(null);
+  // Bumped by Retry to remount the engine for a fresh load.
+  const [attempt, setAttempt] = useState(0);
+
+  const resetPlayback = () => {
     setReady(false);
     setAdvancing(false);
     lastTickRef.current = null;
@@ -303,9 +330,26 @@ const PlayerSurface = forwardRef<VideoPlayerRef, SurfaceProps>(function PlayerSu
     setGrabbedPoster(undefined);
     setCaptionsAvailable(false);
     timeRef.current = { current: 0, duration: 0 };
-    if (!resolved) onError?.({ message: 'Not a YouTube link or a video URL' });
+  };
+
+  useEffect(() => {
+    resetPlayback();
+    setAttempt(0);
+    if (resolved) {
+      setError(null);
+    } else {
+      const invalid = { message: url ? INVALID_URL_MESSAGE : 'No video URL' };
+      setError(invalid);
+      onError?.(invalid);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [resolved]);
+  }, [resolved, url]);
+
+  const retry = () => {
+    resetPlayback();
+    setError(null);
+    setAttempt(n => n + 1);
+  };
 
   const clearHideTimer = () => {
     if (hideTimer.current) clearTimeout(hideTimer.current);
@@ -404,7 +448,10 @@ const PlayerSurface = forwardRef<VideoPlayerRef, SurfaceProps>(function PlayerSu
       if (total) setDuration(total);
       onProgress?.({ currentTime: time, duration: total });
     },
-    onError: (error: PlayerError) => onError?.(error),
+    onError: (failure: PlayerError) => {
+      setError(failure);
+      onError?.(failure);
+    },
     onCaptions: (available, on) => {
       setCaptionsAvailable(available);
       // Each new video (or the fullscreen player) starts from its own default; apply the choice.
@@ -538,8 +585,45 @@ const PlayerSurface = forwardRef<VideoPlayerRef, SurfaceProps>(function PlayerSu
   const nativePoster = thumbnail || grabbedPoster;
   const progress = dragFraction ?? (duration > 0 ? current / duration : 0);
 
+  // A missing or unrecognised url can't be fixed by reloading, so it gets no Retry.
+  const errorOverlay = (failure: PlayerError) => (
+    <View style={StyleSheet.absoluteFill}>
+      {renderError ? (
+        renderError({ error: failure, retry: resolved ? retry : undefined })
+      ) : (
+        <View style={styles.errorOverlay}>
+          <Text style={styles.errorText}>{errorMessage(failure, !!url)}</Text>
+          {resolved && (
+            <TouchableOpacity
+              style={[styles.errorButton, { backgroundColor: accentColor }]}
+              onPress={retry}
+              accessibilityRole="button"
+            >
+              <Text style={styles.errorButtonText}>Retry</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
+      {fullscreen && onToggleFullscreen && (
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={onToggleFullscreen}
+          hitSlop={12}
+          accessibilityRole="button"
+          accessibilityLabel="Exit fullscreen"
+        >
+          <BackIcon size={20} color={WHITE} />
+        </TouchableOpacity>
+      )}
+    </View>
+  );
+
   if (!resolved) {
-    return <View style={[styles.container, style]} />;
+    return (
+      <View style={[styles.container, style]}>
+        {errorOverlay({ message: url ? INVALID_URL_MESSAGE : 'No video URL' })}
+      </View>
+    );
   }
 
   const swipes = !!onSwipeDown || !!onSwipeUp;
@@ -563,7 +647,7 @@ const PlayerSurface = forwardRef<VideoPlayerRef, SurfaceProps>(function PlayerSu
     >
       {resolved.kind === 'youtube' ? (
         <YouTubeEngine
-          key={resolved.videoId}
+          key={`${resolved.videoId}:${attempt}`}
           ref={engineRef}
           videoId={resolved.videoId}
           hideBranding={hideYouTubeBranding}
@@ -575,7 +659,7 @@ const PlayerSurface = forwardRef<VideoPlayerRef, SurfaceProps>(function PlayerSu
         />
       ) : (
         <NativeVideoEngine
-          key={resolved.url}
+          key={`${resolved.url}:${attempt}`}
           ref={engineRef}
           url={resolved.url}
           grabPoster={!thumbnail}
@@ -603,13 +687,13 @@ const PlayerSurface = forwardRef<VideoPlayerRef, SurfaceProps>(function PlayerSu
         accessible={false}
       />
 
-      {loading && !inPictureInPicture && (
+      {loading && !error && !inPictureInPicture && (
         <View style={styles.centerOverlay} pointerEvents="none">
           {renderLoading ? renderLoading() : <ActivityIndicator color={WHITE} size="large" />}
         </View>
       )}
 
-      {showControls && ready && (controlsVisible || settingsView !== null) && (
+      {showControls && ready && !error && (controlsVisible || settingsView !== null) && (
         <View style={styles.controls} pointerEvents="box-none">
           {fullscreen && onToggleFullscreen && renderBackButton && (
             <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
@@ -830,6 +914,8 @@ const PlayerSurface = forwardRef<VideoPlayerRef, SurfaceProps>(function PlayerSu
         </View>
       )}
 
+      {error && !inPictureInPicture && errorOverlay(error)}
+
       {doubleTapToSeek && seekStepSeconds > 0 && (
         <>
           <SideSeekFeedback ref={backFeedback} forward={false} edge={zoneEdge} halfWidth={surfaceSize.width / 2} />
@@ -891,7 +977,7 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(function
   const insideMini = useContext(InsideMiniPlayer);
   const miniAvailable = useMemo(() => !insideMini && miniPlayer.supported(), [insideMini]);
   const [adopted] = useState(() => {
-    if (!miniAvailable || !miniPlayer.active() || miniPlayer.hasOrigin() || !miniPlayer.showsSameMedia(props)) return null;
+    if (!miniAvailable || !miniPlayer.canAdopt(props, firstIndex)) return null;
     const id = miniPlayer.getSession()?.id;
     return id === undefined ? null : { id, live: miniPlayer.getLiveState() };
   });
@@ -930,10 +1016,12 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(function
   liveRef.current = { index, miniId };
   // The inline player's box, measured for the animation into and out of the mini player.
   const boxRef = useRef<View>(null);
+  const foldedRef = useRef(false);
   const measureBox = () =>
     new Promise<MiniRect | null>(resolve => {
       const box = boxRef.current;
-      if (!box) return resolve(null);
+      // Folded away (off-screen), there's no spot to animate into.
+      if (!box || foldedRef.current) return resolve(null);
       box.measureInWindow((x, y, width, height) => resolve(width > 0 && height > 0 ? { x, y, width, height } : null));
     });
   // How the mini player hands the video back to this player.
@@ -1187,11 +1275,17 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(function
   // While the mini player has the video, the listed playlist takes the whole space (the video
   // area folds away, still mounted so it keeps its player).
   const folded = !!panel && miniId !== null;
+  foldedRef.current = folded;
   return (
     <PlayerSettingsProvider>
       {modalOpen && <StatusBar hidden animated />}
       <WithPanel panel={panel}>
-      <View style={[style, folded && styles.folded]} ref={boxRef} collapsable={false}>
+      <View
+        style={[style ?? styles.defaultFrame, folded && styles.folded]}
+        pointerEvents={folded ? 'none' : 'auto'}
+        ref={boxRef}
+        collapsable={false}
+      >
       <PlayerSurface
         {...surfaceProps}
         {...autoNextProps}
@@ -1272,8 +1366,12 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(function
 
 const styles = StyleSheet.create({
   container: { backgroundColor: BLACK, overflow: 'hidden' },
+  // Without a style: full width at 16:9, which suits most videos.
+  defaultFrame: { width: '100%', aspectRatio: 16 / 9, backgroundColor: '#000000' },
   withPanel: { flex: 1 },
-  folded: { maxHeight: 0, overflow: 'hidden' },
+  // Out of the layout and off-screen, at its full size: shrinking it would make the YouTube page
+  // (and native video surface) re-lay out at 0px and come back zoomed or blank.
+  folded: { position: 'absolute', top: 0, left: 0, right: 0, transform: [{ translateX: 100000 }] },
   miniPlaceholder: {
     ...StyleSheet.absoluteFill,
     backgroundColor: BLACK,
@@ -1376,6 +1474,16 @@ const styles = StyleSheet.create({
   rateOptionText: { color: WHITE, fontSize: 14, fontWeight: '600' },
   fullscreenButton: { marginLeft: 10, padding: 3 },
   // Inset past the landscape camera cutout.
+  errorOverlay: {
+    ...StyleSheet.absoluteFill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+    backgroundColor: 'rgba(0,0,0,0.85)',
+  },
+  errorText: { color: WHITE, fontSize: 14, lineHeight: 20, textAlign: 'center' },
+  errorButton: { marginTop: 14, borderRadius: 20, paddingHorizontal: 22, paddingVertical: 9 },
+  errorButtonText: { color: WHITE, fontSize: 14, fontWeight: '700' },
   backButton: {
     position: 'absolute',
     top: 12,

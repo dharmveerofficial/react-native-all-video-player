@@ -83,6 +83,7 @@ export interface VideoPlayerOptions {
   /** Default true. */
   allowFullscreen?: boolean;
   onFullscreenChange?: (fullscreen: boolean) => void;
+  /** The video area. Default: full width at 16:9 on black; a style you pass replaces it. */
   style?: StyleProp<ViewStyle>;
   renderLoading?: () => ReactNode;
   /**
@@ -90,6 +91,12 @@ export interface VideoPlayerOptions {
    * position it yourself (e.g. absolute, top-left). Return null to hide the button.
    */
   renderBackButton?: (props: { exitFullscreen: () => void }) => ReactNode;
+  /**
+   * Replaces the message shown over the player when the video can't play (or url is missing or
+   * not a video link). retry reloads the video; it's undefined when the url itself is the problem.
+   * Return null to show nothing.
+   */
+  renderError?: (props: { error: PlayerError; retry?: () => void }) => ReactNode;
   onReady?: (info: { duration: number }) => void;
   onStateChange?: (state: PlayerState) => void;
   /** About twice a second. */

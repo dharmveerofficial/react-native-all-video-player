@@ -50,7 +50,7 @@ import { VideoPlayer } from 'react-native-all-video-player';
 <VideoPlayer url="https://cdn.example.com/live/index.m3u8" style={{ width: '100%', aspectRatio: 16 / 9 }} />;
 ```
 
-Give the player a size; 16:9 suits most videos. Pass `url` or `playlist`; TypeScript reports an error if both are missing.
+Without a `style` the player is full width at 16:9; pass one to size it yourself. Pass `url` or `playlist`; TypeScript reports an error if both are missing.
 
 ### Playlists
 
@@ -147,8 +147,8 @@ See [`example/App.tsx`](example/App.tsx) for a runnable screen.
 | Prop | Type | Default | |
 |---|---|---|---|
 | `url` | `string` | — | Any video URL, or a YouTube id/link. Required unless `playlist` is given. |
-| `playlist` | `string[]` or `{ url, title, subTitle?, thumbnail? }[]` | — | Videos to play in order, YouTube and files mixed; used instead of `url`. Adds previous/next buttons and "Autoplay next" in settings. Items with titles are also listed under the player. |
 | `playlistStartIndex` | `number` | `0` | Playlists: the video to start with. |
+| `playlist` | `string[]` or `{ url, title, subTitle?, thumbnail? }[]` | — | Videos to play in order, YouTube and files mixed; used instead of `url`. Adds previous/next buttons and "Autoplay next" in settings. Items with titles are also listed under the player. |
 | `onVideoChange` | `(index: number, url: string) => void` | — | Playlists: the player moved to another video (previous/next or autoplay). |
 | `autoPlay` | `boolean` | `false` | Play as soon as the player is ready. |
 | `startSeconds` | `number` | `0` | Start position. |
@@ -162,9 +162,10 @@ See [`example/App.tsx`](example/App.tsx) for a runnable screen.
 | `accentColor` | `string` | `#EF4444` | Seek bar, selected speed and switch color. |
 | `allowFullscreen` | `boolean` | `true` | Show the fullscreen button. |
 | `onFullscreenChange` | `(fullscreen: boolean) => void` | — | |
-| `style` | `ViewStyle` | — | Size and position. |
+| `style` | `ViewStyle` | full width, 16:9, black | Size and position of the video; replaces the default. |
 | `renderLoading` | `() => ReactNode` | spinner | Shown while loading/buffering. |
 | `renderBackButton` | `({ exitFullscreen }) => ReactNode` | arrow in a circle | Replaces the fullscreen back button (shown with the controls). Position it yourself; return `null` to hide it. |
+| `renderError` | `({ error, retry }) => ReactNode` | message + Retry | Shown over the player when the video can't play, or `url` is missing or not a video link (then `retry` is `undefined`). Return `null` to show nothing. |
 | `onReady` | `({ duration }) => void` | — | `duration` is `0` for live streams. |
 | `onStateChange` | `(state: PlayerState) => void` | — | `Unstarted / Ended / Playing / Paused / Buffering / Cued`. |
 | `onProgress` | `({ currentTime, duration }) => void` | — | About twice a second. |
@@ -213,7 +214,7 @@ formatTime(3725);                               // '1:02:05'
 
 ## Errors
 
-Video files and streams report a `message` and no `code`. On Android the message is one of "A network error stopped the video from loading", "The video link is invalid or has expired" or "The video format is not supported", falling back to the player's own message. On iOS it is the system's error description. A `url` that is neither a YouTube video nor an http(s) URL reports "Not a YouTube link or a video URL".
+Video files and streams report a `message` and no `code`. On Android the message is one of "A network error stopped the video from loading", "The video link is invalid or has expired" or "The video format is not supported", falling back to the player's own message. On iOS it is the system's error description. A `url` that is neither a YouTube video nor an http(s) URL reports "Not a supported video link", and a missing or empty one "No video URL". Messages never name YouTube, so they are safe to show to users. The player also shows its own message over the video (see `renderError`).
 
 YouTube videos report a `code`:
 

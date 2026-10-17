@@ -25,7 +25,7 @@ export const YOUTUBE_ERROR_MESSAGES: Record<number, string> = {
   101: 'The owner does not allow this video to be embedded',
   150: 'The owner does not allow this video to be embedded',
   152: 'The owner does not allow this video to be embedded',
-  153: 'YouTube rejected the player configuration',
+  153: 'The video player configuration was rejected',
 };
 
 /** Percent-encodes what could break out of a CSS url("...") inside a <style>. */
@@ -40,7 +40,7 @@ export function youtubeHtml(options: YouTubeHtmlOptions): string {
   const coverOn = !!thumbnail;
   const image = thumbnail ? cssUrl(thumbnail) : '';
 
-  return `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
+  return `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <style>html,body{margin:0;height:100%;background:#000;overflow:hidden}
 #player{position:absolute;left:0;top:0;width:100%;height:100%;border:0}
 #cover{position:absolute;top:0;left:0;width:100%;height:100%;z-index:1;background:#000
@@ -118,7 +118,7 @@ function onYouTubeIframeAPIReady() {
 }
 var tag = document.createElement('script');
 tag.src = 'https://www.youtube.com/iframe_api';
-tag.onerror = function () { send({ type: 'error', message: 'Could not load the YouTube player' }); };
+tag.onerror = function () { send({ type: 'error', message: 'Could not load the video player' }); };
 document.head.appendChild(tag);
 </script></body></html>`;
 }

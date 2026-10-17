@@ -47,9 +47,7 @@ function MiniPlayerRoot() {
   const maximize = () => {
     if (!miniPlayer.hasOrigin()) {
       // The original screen has closed: the app reopens it (its player adopts this session).
-      const reopen = miniPlayer.getSession()?.reopen;
-      if (reopen) reopen();
-      else grow(true);
+      if (!miniPlayer.reopenOrigin()) grow(true);
       return;
     }
     // The original player takes over while this one shrinks back into it.

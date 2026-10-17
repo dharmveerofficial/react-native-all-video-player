@@ -147,7 +147,7 @@ export const YouTubeEngine = forwardRef<EngineHandle, YouTubeEngineProps>(
         html={html}
         baseUrl={EMBED_ORIGIN}
         onMessage={onMessage}
-        onLoadError={() => onError({ message: 'The YouTube player failed to load' })}
+        onLoadError={() => onError({ message: 'The video player failed to load' })}
       />
     );
   },
