@@ -42,14 +42,14 @@ export function youtubeHtml(options: YouTubeHtmlOptions): string {
 
   return `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <style>html,body{margin:0;height:100%;background:#000;overflow:hidden}
-#player{position:absolute;left:0;top:0;width:100%;height:100%;border:0}
+#player{position:absolute;left:0;top:0;width:100%;height:100%;border:0;visibility:hidden}
 #cover{position:absolute;top:0;left:0;width:100%;height:100%;z-index:1;background:#000
   url("${image}") center/cover no-repeat}
 #cover.hidden{display:none}
 #shield{position:absolute;top:0;left:0;width:100%;height:100%;z-index:2}</style><style id="frame"></style>
 </head><body><div id="player"></div><div id="cover"${coverOn ? '' : ' class="hidden"'}></div><div id="shield"></div>
 <script>
-var player, ready = false, hasPlayed = false;
+var player, ready = false, hasPlayed = false, failed = false;
 var cover = document.getElementById('cover');
 // Sizes in px from the window: Android WebView can keep html/body at 0px tall
 // when the page loads before the view is laid out, collapsing 100% heights.
@@ -60,6 +60,14 @@ function layout() {
 layout();
 window.addEventListener('resize', layout);
 function send(m) { window.AVPBridge.postMessage(JSON.stringify(m)); }
+// Keep unavailable videos' branding and error screen out of view, including before play.
+// Hide synchronously in the page, before the native error overlay has time to render.
+function fail(m) {
+  failed = true;
+  ready = false;
+  document.getElementById('player').style.visibility = 'hidden';
+  send(m);
+}
 // Thumbnail over the start and end, and over pauses when onPause.
 // With onPause, buffering keeps the current look so seeking while paused
 // doesn't flash the video.
@@ -105,11 +113,16 @@ function onYouTubeIframeAPIReady() {
         // paused (e.g. a video switched to inside picture in picture).
         if (${autoPlay ? 'true' : 'false'}) player.playVideo();
       },
-      onStateChange: function (e) { updateCover(e.data); send({ type: 'state', state: e.data }); },
+      onStateChange: function (e) {
+        if (failed) return;
+        if (e.data === 1) document.getElementById('player').style.visibility = 'visible';
+        updateCover(e.data);
+        send({ type: 'state', state: e.data });
+      },
       // YouTube loads its captions module once a video with captions starts; that's when we
       // learn whether there are captions, and whether they're showing.
       onApiChange: reportCaptions,
-      onError: function (e) { send({ type: 'error', code: e.data }); }
+      onError: function (e) { fail({ type: 'error', code: e.data }); }
     }
   });
   setInterval(function () {
@@ -118,7 +131,7 @@ function onYouTubeIframeAPIReady() {
 }
 var tag = document.createElement('script');
 tag.src = 'https://www.youtube.com/iframe_api';
-tag.onerror = function () { send({ type: 'error', message: 'Could not load the video player' }); };
+tag.onerror = function () { fail({ type: 'error', message: 'Could not load the video player' }); };
 document.head.appendChild(tag);
 </script></body></html>`;
 }

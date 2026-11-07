@@ -29,6 +29,32 @@ test('does not report unrelated page script errors', () => {
   assert.doesNotMatch(youtubeHtml(base), /window\.onerror/);
 });
 
+test('keeps unavailable videos hidden and hides errors before notifying the app', () => {
+  for (const hideBranding of [true, false]) {
+    const html = youtubeHtml({ ...base, hideBranding, thumbnail: undefined });
+    assert.match(html, /#player\{[^}]*visibility:hidden/);
+    const frame = { style: { visibility: 'visible' } };
+    const messages: unknown[] = [];
+    const failSource = html.match(/function fail[\s\S]*?\n}/)![0];
+    const fail = new Function('document', 'send', `var failed = false, ready = true; ${failSource}; return fail;`)(
+      { getElementById: () => frame },
+      (message: unknown) => {
+        assert.equal(frame.style.visibility, 'hidden');
+        messages.push(message);
+      },
+    );
+    for (const code of [100, 101, 150, 152, 153]) fail({ type: 'error', code });
+    assert.equal(messages.length, 5);
+    assert.match(html, /onError: function \(e\) \{ fail\(/);
+    const stateSource = html.match(/onStateChange: (function \(e\) \{[\s\S]*?\n      })/)![1];
+    const state = new Function('document', `var failed = true; return (${stateSource});`)(
+      { getElementById: () => frame },
+    );
+    state({ data: 1 });
+    assert.equal(frame.style.visibility, 'hidden');
+  }
+});
+
 test('hideBranding only marks the iframe for the native WebView; it adds no cover', () => {
   assert.match(youtubeHtml(base), /avp_hide_branding: 1 \}/);
   assert.match(youtubeHtml({ ...base, hideBranding: false }), /avp_hide_branding: 0 \}/);
